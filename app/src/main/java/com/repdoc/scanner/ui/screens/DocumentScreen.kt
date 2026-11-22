@@ -504,7 +504,7 @@ private fun PageAction(
 ) {
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(10.dp))
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -537,18 +537,21 @@ private fun PageTile(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .then(
-                if (selected) Modifier.border(2.dp, Brand, RoundedCornerShape(4.dp))
-                else Modifier
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) Brand else MaterialTheme.colorScheme.outlineVariant,
+                shape = RoundedCornerShape(16.dp)
             )
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(8.dp)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(0.72f)
+                .clip(RoundedCornerShape(11.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
             AsyncImage(
@@ -575,9 +578,9 @@ private fun PageTile(
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(6.dp)
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(3.dp))
+                    .padding(7.dp)
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(9.dp))
                     .background(Color.Black.copy(alpha = 0.55f))
                     .clickable(onClick = onEdit),
                 contentAlignment = Alignment.Center
@@ -592,10 +595,10 @@ private fun PageTile(
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(6.dp)
-                    .clip(RoundedCornerShape(3.dp))
+                    .padding(7.dp)
+                    .clip(RoundedCornerShape(50))
                     .background(Color.Black.copy(alpha = 0.55f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
                 Text(
                     text = "${index + 1}",
@@ -607,12 +610,12 @@ private fun PageTile(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 7.dp),
+                .padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = "Page ${index + 1}",
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

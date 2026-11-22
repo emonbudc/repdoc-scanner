@@ -3,6 +3,7 @@ package com.repdoc.scanner.ui.screens
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -273,10 +274,6 @@ fun HomeScreen(
                                     moveDoc = doc
                                 }
                             )
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
-                                thickness = 1.dp
-                            )
                         }
                     }
                 }
@@ -469,8 +466,8 @@ private fun HomeHeader(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(76.dp)
-                    .padding(horizontal = 12.dp),
+                    .height(82.dp)
+                    .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (onBackFolder != null) {
@@ -495,10 +492,16 @@ private fun HomeHeader(
                     Row(
                         modifier = Modifier
                             .weight(1f)
-                            .height(32.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.background)
-                            .padding(horizontal = 10.dp),
+                            .height(40.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .border(
+                                1.dp,
+                                if (brandHeader) Color.White.copy(alpha = 0.28f)
+                                else MaterialTheme.colorScheme.outline,
+                                RoundedCornerShape(14.dp)
+                            )
+                            .padding(horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
@@ -514,7 +517,7 @@ private fun HomeHeader(
                             singleLine = true,
                             textStyle = TextStyle(
                                 color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 13.sp
+                                fontSize = 14.sp
                             ),
                             modifier = Modifier.weight(1f),
                             decorationBox = { inner ->
@@ -522,7 +525,7 @@ private fun HomeHeader(
                                     Text(
                                         "Search",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 13.sp
+                                        fontSize = 14.sp
                                     )
                                 }
                                 inner()
@@ -617,19 +620,25 @@ private fun FolderCard(
     Box {
         Column(
             modifier = Modifier
-                .width(108.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .width(112.dp)
+                .clip(RoundedCornerShape(16.dp))
                 .background(
-                    if (selected) Brand.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surface
+                    if (selected) MaterialTheme.colorScheme.primaryContainer
+                    else MaterialTheme.colorScheme.surface
+                )
+                .border(
+                    1.dp,
+                    if (selected) Brand else MaterialTheme.colorScheme.outlineVariant,
+                    RoundedCornerShape(16.dp)
                 )
                 .clickable(onClick = onClick)
-                .padding(12.dp)
+                .padding(14.dp)
         ) {
             Icon(
                 Icons.Outlined.CreateNewFolder,
                 contentDescription = null,
                 tint = Brand,
-                modifier = Modifier.size(26.dp)
+                modifier = Modifier.size(28.dp)
             )
             Spacer(Modifier.height(8.dp))
             Text(
@@ -763,9 +772,10 @@ private fun HomeBottomBar(
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .size(62.dp)
+                .size(64.dp)
                 .clip(CircleShape)
                 .background(Brand)
+                .border(4.dp, MaterialTheme.colorScheme.surface, CircleShape)
                 .clickable(onClick = onScan),
             contentAlignment = Alignment.Center
         ) {
@@ -790,17 +800,18 @@ private fun HomeTools(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(18.dp))
                 .background(MaterialTheme.colorScheme.surface)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp))
                 .clickable(onClick = onIdCard)
-                .padding(14.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(42.dp)
                     .clip(CircleShape)
-                    .background(Brand.copy(alpha = 0.12f)),
+                    .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -814,14 +825,14 @@ private fun HomeTools(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "ID Card",
-                    fontSize = 15.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     "Scan or import front and back",
-                    fontSize = 11.sp,
-                    color = Muted
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Text("›", fontSize = 22.sp, color = Muted)
@@ -846,10 +857,11 @@ private fun PdfToolMiniCard(
 ) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
-            .padding(10.dp)
+            .padding(12.dp)
     ) {
         Icon(
             painter = painterResource(tool.icon),
@@ -925,16 +937,17 @@ private fun ToolCard(
 ) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp))
             .clickable(onClick = onClick)
             .padding(16.dp)
     ) {
         Box(
             modifier = Modifier
-                .size(44.dp)
+                .size(46.dp)
                 .clip(CircleShape)
-                .background(Brand.copy(alpha = 0.12f)),
+                .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -947,15 +960,15 @@ private fun ToolCard(
         Spacer(Modifier.height(12.dp))
         Text(
             text = title,
-            fontSize = 15.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(Modifier.height(3.dp))
         Text(
             text = subtitle,
-            fontSize = 11.sp,
-            color = Muted,
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
@@ -1094,7 +1107,7 @@ private fun EmptyHome(modifier: Modifier) {
             Text(
                 "Tap the scan button to capture your first page.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Muted
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -1114,16 +1127,18 @@ private fun DocumentRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(100.dp)
+            .padding(horizontal = 12.dp, vertical = 5.dp)
+            .clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(18.dp))
             .clickable(onClick = onOpen)
-            .padding(start = 9.dp),
+            .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(width = 99.dp, height = 78.dp)
-                .clip(RoundedCornerShape(2.dp))
+                .size(width = 94.dp, height = 76.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
@@ -1143,16 +1158,11 @@ private fun DocumentRow(
                 )
             }
         }
-        Spacer(Modifier.width(17.dp))
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(vertical = 10.dp)
-        ) {
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = document.name,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Normal,
+                style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -1161,20 +1171,22 @@ private fun DocumentRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = formatDate(document.updatedAt),
-                    fontSize = 12.sp,
-                    color = Muted
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.width(8.dp))
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        text = document.pageCount.toString(),
-                        fontSize = 8.sp,
-                        color = Muted
+                        text = if (document.pageCount == 1) "1 page"
+                        else "${document.pageCount} pages",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Brand
                     )
                 }
             }
@@ -1184,7 +1196,7 @@ private fun DocumentRow(
                 Icon(
                     Icons.Default.MoreVert,
                     contentDescription = "More",
-                    tint = Muted
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = onDismissMenu) {

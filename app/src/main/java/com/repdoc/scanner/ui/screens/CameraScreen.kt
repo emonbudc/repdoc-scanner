@@ -61,7 +61,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -83,6 +86,7 @@ fun CameraScreen(
     onImport: () -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val previewView = remember {
         PreviewView(context).apply {
@@ -246,12 +250,15 @@ fun CameraScreen(
             }
             Text(
                 text = if (autoCapture) "Auto capture is on" else "Align document within frame",
-                color = Color.White.copy(alpha = 0.9f),
+                color = Color.White.copy(alpha = 0.94f),
                 fontSize = 13.sp,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
                     .padding(top = 88.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.42f))
+                    .padding(horizontal = 14.dp, vertical = 7.dp)
             )
         } else {
             Column(
@@ -292,11 +299,13 @@ fun CameraScreen(
             Text(
                 "Auto",
                 color = if (autoCapture) Brand else Color.White,
-                fontSize = 16.sp,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (autoCapture) Brand.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.12f))
                     .clickable { autoCapture = !autoCapture }
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .padding(horizontal = 12.dp, vertical = 7.dp)
             )
             Spacer(Modifier.weight(1f))
             if (capturedFiles.isNotEmpty()) {
@@ -383,7 +392,10 @@ fun CameraScreen(
                         .size(78.dp)
                         .clip(CircleShape)
                         .background(Color.White.copy(alpha = 0.18f))
-                        .clickable(enabled = hasPermission && !capturing) { capture() },
+                        .clickable(enabled = hasPermission && !capturing) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            capture()
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
@@ -405,8 +417,12 @@ fun CameraScreen(
             Spacer(Modifier.height(10.dp))
             Text(
                 text = if (capturedFiles.isEmpty()) "Scan" else "Tap Done to process ${capturedFiles.size} pages",
-                color = Color.White.copy(alpha = 0.8f),
-                fontSize = 12.sp
+                color = Color.White.copy(alpha = 0.88f),
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.38f))
+                    .padding(horizontal = 12.dp, vertical = 5.dp)
             )
         }
     }
