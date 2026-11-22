@@ -191,9 +191,14 @@ fun IdCardScreen(
                 cropSide = null
             },
             onDone = { cropped ->
-                setSide(pendingSide, cropped)
-                cropSource = null
-                cropSide = null
+                scope.launch {
+                    val clean = withContext(Dispatchers.Default) {
+                        ImageProcessor.cleanCardImage(cropped)
+                    }
+                    setSide(pendingSide, clean)
+                    cropSource = null
+                    cropSide = null
+                }
             }
         )
         return
@@ -287,8 +292,12 @@ fun IdCardScreen(
                             busy = true
                             scope.launch {
                                 val combined = withContext(Dispatchers.Default) {
-                                    val filteredFront = NativeFilters.apply(f, selectedFilter)
-                                    val filteredBack = NativeFilters.apply(b, selectedFilter)
+                                    val filteredFront = ImageProcessor.cleanCardImage(
+                                        NativeFilters.apply(f, selectedFilter)
+                                    )
+                                    val filteredBack = ImageProcessor.cleanCardImage(
+                                        NativeFilters.apply(b, selectedFilter)
+                                    )
                                     combineIdCard(filteredFront, filteredBack)
                                 }
                                 busy = false
@@ -389,7 +398,7 @@ private fun IdCardSlot(
                 .fillMaxWidth()
                 .aspectRatio(1.586f)
                 .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(Color.White),
             contentAlignment = Alignment.Center
         ) {
             if (bitmap != null) {
@@ -433,7 +442,8 @@ private suspend fun prepareBitmap(context: Context, bitmap: Bitmap): Bitmap =
         val scaled = ImageProcessor.scaled(bitmap, 2400)
         runCatching {
             val detection = AutoCrop.detect(context, scaled)
-            if (detection != null) AutoCrop.crop(scaled, detection.corners) else scaled
+            val cropped = if (detection != null) AutoCrop.crop(scaled, detection.corners) else scaled
+            ImageProcessor.cleanCardImage(cropped)
         }.getOrDefault(scaled)
     }
 

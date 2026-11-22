@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.PointF
@@ -120,6 +121,74 @@ object ImageProcessor {
             PointF(0f, bitmap.height.toFloat())
         )
     }
+
+    fun flattenOnWhite(bitmap: Bitmap): Bitmap {
+        if (!bitmap.hasAlpha()) return bitmap
+        val out = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawColor(Color.WHITE)
+        canvas.drawBitmap(
+            bitmap,
+            0f,
+            0f,
+            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        )
+        return out
+    }
+
+    fun trimDarkBorder(bitmap: Bitmap, threshold: Int = 48): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        if (width < 8 || height < 8) return bitmap
+        val maxX = (width * 0.12f).toInt().coerceAtLeast(2)
+        val maxY = (height * 0.12f).toInt().coerceAtLeast(2)
+        val stepX = (width / 120).coerceAtLeast(1)
+        val stepY = (height / 120).coerceAtLeast(1)
+
+        fun rowIsDark(y: Int): Boolean {
+            var dark = 0
+            var total = 0
+            var x = 0
+            while (x < width) {
+                val pixel = bitmap.getPixel(x, y)
+                val luma = (Color.red(pixel) * 299 + Color.green(pixel) * 587 + Color.blue(pixel) * 114) / 1000
+                if (luma < threshold) dark++
+                total++
+                x += stepX
+            }
+            return total > 0 && dark * 100 >= total * 96
+        }
+
+        fun columnIsDark(x: Int): Boolean {
+            var dark = 0
+            var total = 0
+            var y = 0
+            while (y < height) {
+                val pixel = bitmap.getPixel(x, y)
+                val luma = (Color.red(pixel) * 299 + Color.green(pixel) * 587 + Color.blue(pixel) * 114) / 1000
+                if (luma < threshold) dark++
+                total++
+                y += stepY
+            }
+            return total > 0 && dark * 100 >= total * 96
+        }
+
+        var left = 0
+        while (left < maxX && columnIsDark(left)) left++
+        var top = 0
+        while (top < maxY && rowIsDark(top)) top++
+        var right = 0
+        while (right < maxX && columnIsDark(width - 1 - right)) right++
+        var bottom = 0
+        while (bottom < maxY && rowIsDark(height - 1 - bottom)) bottom++
+        if (left + right >= width * 0.5f || top + bottom >= height * 0.5f) return bitmap
+        if (left == 0 && top == 0 && right == 0 && bottom == 0) return bitmap
+        val out = Bitmap.createBitmap(bitmap, left, top, width - left - right, height - top - bottom)
+        return out
+    }
+
+    fun cleanCardImage(bitmap: Bitmap): Bitmap =
+        trimDarkBorder(flattenOnWhite(bitmap))
 
     fun saveJpeg(bitmap: Bitmap, file: File, quality: Int = 94): Boolean {
         return runCatching {
