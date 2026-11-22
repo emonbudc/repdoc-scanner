@@ -112,6 +112,15 @@ object ImageProcessor {
         )
     }
 
+    fun fullCorners(bitmap: Bitmap): List<PointF> {
+        return listOf(
+            PointF(0f, 0f),
+            PointF(bitmap.width.toFloat(), 0f),
+            PointF(bitmap.width.toFloat(), bitmap.height.toFloat()),
+            PointF(0f, bitmap.height.toFloat())
+        )
+    }
+
     fun saveJpeg(bitmap: Bitmap, file: File, quality: Int = 94): Boolean {
         return runCatching {
             file.parentFile?.mkdirs()

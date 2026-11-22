@@ -44,6 +44,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -107,7 +108,9 @@ fun HomeScreen(
     onMoveDocument: (String, String?) -> Unit,
     onSearch: (String, String?) -> List<SearchHit>,
     onIdCard: () -> Unit,
-    onPdfTool: (PdfToolType) -> Unit
+    onPdfTool: (PdfToolType) -> Unit,
+    autoSave: Boolean,
+    onAutoSaveChange: (Boolean) -> Unit
 ) {
     var query by remember { mutableStateOf("") }
     var menuFor by remember { mutableStateOf<String?>(null) }
@@ -177,7 +180,9 @@ fun HomeScreen(
                 selectedTab == HomeTab.ME -> MeContent(
                     modifier = Modifier.fillMaxSize(),
                     documentCount = documents.size,
-                    folderCount = folders.size
+                    folderCount = folders.size,
+                    autoSave = autoSave,
+                    onAutoSaveChange = onAutoSaveChange
                 )
                 query.isNotBlank() -> SearchResults(
                     hits = hits,
@@ -958,7 +963,13 @@ private fun ToolCard(
 }
 
 @Composable
-private fun MeContent(modifier: Modifier, documentCount: Int, folderCount: Int) {
+private fun MeContent(
+    modifier: Modifier,
+    documentCount: Int,
+    folderCount: Int,
+    autoSave: Boolean,
+    onAutoSaveChange: (Boolean) -> Unit
+) {
     Column(
         modifier = modifier
             .verticalScroll(rememberScrollState())
@@ -991,9 +1002,50 @@ private fun MeContent(modifier: Modifier, documentCount: Int, folderCount: Int) 
         Spacer(Modifier.height(24.dp))
         MeRow("Documents", documentCount.toString())
         MeRow("Folders", folderCount.toString())
+        MeToggleRow(
+            label = "Auto-save scans",
+            detail = "Save with Magic Color after crop",
+            checked = autoSave,
+            onCheckedChange = onAutoSaveChange
+        )
         MeRow("Storage", "On this device")
         MeRow("Version", "1.1")
     }
+}
+
+@Composable
+private fun MeToggleRow(
+    label: String,
+    detail: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(60.dp)
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = detail,
+                fontSize = 10.sp,
+                color = Muted
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
+        thickness = 1.dp
+    )
 }
 
 @Composable

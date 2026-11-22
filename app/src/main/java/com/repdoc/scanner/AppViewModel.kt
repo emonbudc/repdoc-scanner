@@ -1,6 +1,7 @@
 package com.repdoc.scanner
 
 import android.app.Application
+import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,7 +30,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var pendingBitmaps by mutableStateOf<List<Bitmap>>(emptyList())
     var pendingIndex by mutableStateOf(0)
     var activeDocumentId by mutableStateOf<String?>(null)
-    var selectedFilter by mutableStateOf(DocumentFilter.ORIGINAL)
+    var selectedFilter by mutableStateOf(DocumentFilter.MAGIC_COLOR)
+    var autoSave by mutableStateOf(
+        application.getSharedPreferences("repdoc_settings", Context.MODE_PRIVATE)
+            .getBoolean("auto_save", true)
+    )
     var editingDocumentId by mutableStateOf<String?>(null)
     var editingPageId by mutableStateOf<String?>(null)
     var busy by mutableStateOf(false)
@@ -39,6 +44,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun document(id: String): Document? = repository.document(id)
+
+    fun setAutoSave(enabled: Boolean) {
+        autoSave = enabled
+        getApplication<Application>()
+            .getSharedPreferences("repdoc_settings", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("auto_save", enabled)
+            .apply()
+    }
 
     fun reload() = repository.reload()
 
@@ -78,7 +92,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         pendingBitmap = bitmap
         pendingBitmaps = emptyList()
         pendingIndex = 0
-        selectedFilter = DocumentFilter.ORIGINAL
+        selectedFilter = DocumentFilter.MAGIC_COLOR
     }
 
     fun startImport(bitmaps: List<Bitmap>) {
@@ -86,7 +100,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         pendingBitmaps = bitmaps
         pendingIndex = 0
         pendingBitmap = bitmaps.first()
-        selectedFilter = DocumentFilter.ORIGINAL
+        selectedFilter = DocumentFilter.MAGIC_COLOR
         editingDocumentId = null
         editingPageId = null
     }
@@ -95,7 +109,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (pendingIndex + 1 < pendingBitmaps.size) {
             pendingIndex += 1
             pendingBitmap = pendingBitmaps[pendingIndex]
-            selectedFilter = DocumentFilter.ORIGINAL
+            selectedFilter = DocumentFilter.MAGIC_COLOR
             return pendingBitmap
         }
         pendingBitmaps = emptyList()
@@ -108,7 +122,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         pendingBitmap = null
         pendingBitmaps = emptyList()
         pendingIndex = 0
-        selectedFilter = DocumentFilter.ORIGINAL
+        selectedFilter = DocumentFilter.MAGIC_COLOR
         editingDocumentId = null
         editingPageId = null
     }
@@ -178,7 +192,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         pendingBitmap = null
         pendingBitmaps = emptyList()
         pendingIndex = 0
-        selectedFilter = DocumentFilter.ORIGINAL
+        selectedFilter = DocumentFilter.MAGIC_COLOR
         editingDocumentId = null
         editingPageId = null
     }

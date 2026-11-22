@@ -66,6 +66,7 @@ fun CropScreen(
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var dragIndex by remember { mutableStateOf(-1) }
     var detecting by remember(bitmap) { mutableStateOf(true) }
+    var fullPage by remember(bitmap) { mutableStateOf(false) }
     var autoRequest by remember(bitmap) { mutableIntStateOf(0) }
     val density = LocalDensity.current
     val context = LocalContext.current
@@ -79,6 +80,7 @@ fun CropScreen(
         if (detection != null) {
             corners = detection.corners
         }
+        fullPage = false
         detecting = false
     }
 
@@ -93,7 +95,7 @@ fun CropScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = { onDone(AutoCrop.crop(bitmap, corners)) }) {
+                    TextButton(onClick = { onDone(if (fullPage) bitmap else AutoCrop.crop(bitmap, corners)) }) {
                         Text("Done", color = Color(0xFF00B796))
                     }
                 },
@@ -122,7 +124,18 @@ fun CropScreen(
                         Text("Auto", color = Color(0xFF00B796))
                     }
                     TextButton(
-                        onClick = { corners = ImageProcessor.defaultCorners(bitmap) }
+                        onClick = {
+                            corners = ImageProcessor.fullCorners(bitmap)
+                            fullPage = true
+                        }
+                    ) {
+                        Text("Full page", color = Color.White)
+                    }
+                    TextButton(
+                        onClick = {
+                            corners = ImageProcessor.defaultCorners(bitmap)
+                            fullPage = false
+                        }
                     ) {
                         Text("Reset", color = Color.White)
                     }
@@ -162,6 +175,7 @@ fun CropScreen(
                                 change.consume()
                                 val index = dragIndex
                                 if (index >= 0) {
+                                    fullPage = false
                                     val layout = imageLayout(bitmap, canvasSize)
                                     if (layout.scale > 0f) {
                                         val current = corners[index]

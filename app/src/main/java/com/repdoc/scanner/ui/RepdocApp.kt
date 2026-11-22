@@ -1,5 +1,6 @@
 package com.repdoc.scanner.ui
 
+import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -61,6 +62,18 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             is Screen.PdfTools -> Screen.Home
             is Screen.Document -> Screen.Home
             is Screen.Ocr -> Screen.Document(current.documentId)
+        }
+    }
+
+    fun saveCurrent(bitmap: Bitmap) {
+        viewModel.savePage(bitmap, viewModel.selectedFilter) { doc ->
+            val next = viewModel.advancePending()
+            if (next != null) {
+                screen = Screen.Crop
+            } else {
+                viewModel.resetPending()
+                screen = Screen.Document(doc.id)
+            }
         }
     }
 
@@ -137,7 +150,9 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             onRenameFolder = { id, name -> viewModel.renameFolder(id, name) },
             onDeleteFolder = { id -> viewModel.deleteFolder(id) },
             onMoveDocument = { id, folderId -> viewModel.moveDocumentToFolder(id, folderId) },
-            onSearch = { query, folderId -> viewModel.search(query, folderId) }
+            onSearch = { query, folderId -> viewModel.search(query, folderId) },
+            autoSave = viewModel.autoSave,
+            onAutoSaveChange = viewModel::setAutoSave
         )
 
         Screen.Camera -> CameraScreen(
@@ -168,8 +183,12 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                     onBack = { goBack() },
                     onDone = { cropped ->
                         viewModel.pendingBitmap = cropped
-                        viewModel.selectedFilter = com.repdoc.scanner.util.DocumentFilter.ORIGINAL
-                        screen = Screen.Filter
+                        viewModel.selectedFilter = com.repdoc.scanner.util.DocumentFilter.MAGIC_COLOR
+                        if (viewModel.autoSave) {
+                            saveCurrent(cropped)
+                        } else {
+                            screen = Screen.Filter
+                        }
                     }
                 )
             }
@@ -186,17 +205,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                     busy = viewModel.busy,
                     onSelect = { viewModel.selectedFilter = it },
                     onBack = { screen = Screen.Crop },
-                    onSave = {
-                        viewModel.savePage(bitmap, viewModel.selectedFilter) { doc ->
-                            val next = viewModel.advancePending()
-                            if (next != null) {
-                                screen = Screen.Crop
-                            } else {
-                                viewModel.resetPending()
-                                screen = Screen.Document(doc.id)
-                            }
-                        }
-                    }
+                    onSave = { saveCurrent(bitmap) }
                 )
             }
         }
@@ -205,8 +214,12 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             onBack = { screen = Screen.Home },
             onCreate = { combined ->
                 viewModel.pendingBitmap = combined
-                viewModel.selectedFilter = com.repdoc.scanner.util.DocumentFilter.ORIGINAL
-                screen = Screen.Filter
+                viewModel.selectedFilter = com.repdoc.scanner.util.DocumentFilter.MAGIC_COLOR
+                if (viewModel.autoSave) {
+                    saveCurrent(combined)
+                } else {
+                    screen = Screen.Filter
+                }
             }
         )
 
