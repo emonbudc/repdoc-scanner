@@ -19,7 +19,10 @@ import com.repdoc.scanner.ui.screens.CropScreen
 import com.repdoc.scanner.ui.screens.DocumentScreen
 import com.repdoc.scanner.ui.screens.FilterScreen
 import com.repdoc.scanner.ui.screens.HomeScreen
+import com.repdoc.scanner.ui.screens.IdCardScreen
 import com.repdoc.scanner.ui.screens.OcrScreen
+import com.repdoc.scanner.ui.screens.PdfToolType
+import com.repdoc.scanner.ui.screens.PdfToolsScreen
 import com.repdoc.scanner.util.ImageProcessor
 import com.repdoc.scanner.util.PdfImporter
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +34,8 @@ sealed interface Screen {
     data object Camera : Screen
     data object Crop : Screen
     data object Filter : Screen
+    data object IdCard : Screen
+    data class PdfTools(val tool: PdfToolType) : Screen
     data class Document(val id: String) : Screen
     data class Ocr(val documentId: String, val pageId: String) : Screen
 }
@@ -52,6 +57,8 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                 currentDocumentScreen(viewModel)
             }
             Screen.Filter -> Screen.Crop
+            Screen.IdCard -> Screen.Home
+            is Screen.PdfTools -> Screen.Home
             is Screen.Document -> Screen.Home
             is Screen.Ocr -> Screen.Document(current.documentId)
         }
@@ -118,6 +125,12 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             },
             onImportImage = { importImage() },
             onImportPdf = { importPdf() },
+            onIdCard = {
+                viewModel.beginNewPage()
+                viewModel.activeDocumentId = null
+                screen = Screen.IdCard
+            },
+            onPdfTool = { tool -> screen = Screen.PdfTools(tool) },
             onDelete = viewModel::delete,
             onRename = viewModel::rename,
             onCreateFolder = { name -> viewModel.createFolder(name) },
@@ -187,6 +200,20 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                 )
             }
         }
+
+        Screen.IdCard -> IdCardScreen(
+            onBack = { screen = Screen.Home },
+            onCreate = { combined ->
+                viewModel.pendingBitmap = combined
+                viewModel.selectedFilter = com.repdoc.scanner.util.DocumentFilter.ORIGINAL
+                screen = Screen.Filter
+            }
+        )
+
+        is Screen.PdfTools -> PdfToolsScreen(
+            tool = current.tool,
+            onBack = { screen = Screen.Home }
+        )
 
         is Screen.Document -> DocumentScreen(
             documentId = current.id,

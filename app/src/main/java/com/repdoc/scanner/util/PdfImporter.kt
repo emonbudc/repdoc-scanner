@@ -12,7 +12,7 @@ import kotlin.math.roundToInt
 
 object PdfImporter {
 
-    fun import(context: Context, uri: Uri, maxPages: Int = 100): List<Bitmap> {
+    fun import(context: Context, uri: Uri, maxPages: Int = 100, maxDimension: Int = 2800): List<Bitmap> {
         return runCatching {
             val descriptor = context.contentResolver.openFileDescriptor(uri, "r") ?: return emptyList()
             descriptor.use { fileDescriptor ->
@@ -22,7 +22,7 @@ object PdfImporter {
                     for (index in 0 until count) {
                         renderer.openPage(index).use { page ->
                             val longest = max(page.width, page.height).coerceAtLeast(1)
-                            val scale = min(2.5f, 2800f / longest)
+                            val scale = min(2.5f, maxDimension.toFloat() / longest)
                             val width = (page.width * scale).roundToInt().coerceAtLeast(1)
                             val height = (page.height * scale).roundToInt().coerceAtLeast(1)
                             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)

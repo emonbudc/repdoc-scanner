@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -104,7 +105,9 @@ fun HomeScreen(
     onRenameFolder: (String, String) -> Unit,
     onDeleteFolder: (String) -> Unit,
     onMoveDocument: (String, String?) -> Unit,
-    onSearch: (String, String?) -> List<SearchHit>
+    onSearch: (String, String?) -> List<SearchHit>,
+    onIdCard: () -> Unit,
+    onPdfTool: (PdfToolType) -> Unit
 ) {
     var query by remember { mutableStateOf("") }
     var menuFor by remember { mutableStateOf<String?>(null) }
@@ -116,7 +119,7 @@ fun HomeScreen(
     var renameFolder by remember { mutableStateOf<Folder?>(null) }
     var deleteFolder by remember { mutableStateOf<Folder?>(null) }
     var folderMenuFor by remember { mutableStateOf<String?>(null) }
-    var selectedTabName by rememberSaveable { mutableStateOf(HomeTab.FILES.name) }
+    var selectedTabName by rememberSaveable { mutableStateOf(HomeTab.HOME.name) }
     val selectedTab = HomeTab.valueOf(selectedTabName)
     val selectedFolder = folders.firstOrNull { it.id == selectedFolderId }
 
@@ -181,17 +184,34 @@ fun HomeScreen(
                     onOpen = onOpen,
                     onOpenPage = onOpenPage
                 )
-                documents.isEmpty() && folders.isEmpty() -> EmptyHome(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp)
-                )
-                filtered.isEmpty() && selectedFolder == null -> EmptyHome(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp)
-                )
+                documents.isEmpty() && folders.isEmpty() -> Column(Modifier.fillMaxSize()) {
+                    if (selectedTab == HomeTab.HOME) {
+                        HomeTools(onIdCard = onIdCard, onPdfTool = onPdfTool)
+                    }
+                    EmptyHome(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .padding(32.dp)
+                    )
+                }
+                filtered.isEmpty() && selectedFolder == null -> Column(Modifier.fillMaxSize()) {
+                    if (selectedTab == HomeTab.HOME) {
+                        HomeTools(onIdCard = onIdCard, onPdfTool = onPdfTool)
+                    }
+                    EmptyHome(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .padding(32.dp)
+                    )
+                }
                 else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    if (selectedTab == HomeTab.HOME) {
+                        item(key = "home_tools") {
+                            HomeTools(onIdCard = onIdCard, onPdfTool = onPdfTool)
+                        }
+                    }
                     if (folders.isNotEmpty() && selectedFolder == null) {
                         item(key = "folders") {
                             FolderStrip(
@@ -754,6 +774,97 @@ private fun HomeBottomBar(
                 modifier = Modifier.size(24.dp)
             )
         }
+    }
+}
+
+@Composable
+private fun HomeTools(
+    onIdCard: () -> Unit,
+    onPdfTool: (PdfToolType) -> Unit
+) {
+    Column(
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .clickable(onClick = onIdCard)
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Brand.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Outlined.CreditCard,
+                    contentDescription = null,
+                    tint = Brand,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "ID Card",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    "Scan or import front and back",
+                    fontSize = 11.sp,
+                    color = Muted
+                )
+            }
+            Text("›", fontSize = 22.sp, color = Muted)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PdfToolType.entries.forEach { tool ->
+                PdfToolMiniCard(
+                    tool = tool,
+                    onClick = { onPdfTool(tool) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PdfToolMiniCard(
+    tool: PdfToolType,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick)
+            .padding(10.dp)
+    ) {
+        Icon(
+            painter = painterResource(tool.icon),
+            contentDescription = null,
+            tint = Brand,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = tool.title,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
