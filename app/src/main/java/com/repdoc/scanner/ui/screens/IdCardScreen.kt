@@ -87,6 +87,8 @@ fun IdCardScreen(
     var captureSide by remember { mutableStateOf(IdSide.FRONT) }
     var captureFile by remember { mutableStateOf<File?>(null) }
     var gallerySide by remember { mutableStateOf(IdSide.FRONT) }
+    var cropSource by remember { mutableStateOf<Bitmap?>(null) }
+    var cropSide by remember { mutableStateOf<IdSide?>(null) }
 
     fun setSide(side: IdSide, bitmap: Bitmap) {
         if (side == IdSide.FRONT) front = bitmap else back = bitmap
@@ -108,7 +110,8 @@ fun IdCardScreen(
                 ImageProcessor.decodeFile(file.absolutePath, 2400)
             }
             if (bitmap != null) {
-                setSide(captureSide, prepareBitmap(context, bitmap))
+                cropSource = bitmap
+                cropSide = captureSide
             } else {
                 Toast.makeText(context, "Could not read captured photo", Toast.LENGTH_SHORT).show()
             }
@@ -127,7 +130,8 @@ fun IdCardScreen(
                 ImageProcessor.decodeBitmap(context, uri, 2400)
             }
             if (bitmap != null) {
-                setSide(gallerySide, prepareBitmap(context, bitmap))
+                cropSource = bitmap
+                cropSide = gallerySide
             } else {
                 Toast.makeText(context, "Could not open image", Toast.LENGTH_SHORT).show()
             }
@@ -168,6 +172,24 @@ fun IdCardScreen(
             file
         )
         captureLauncher.launch(uri)
+    }
+
+    val pendingCrop = cropSource
+    val pendingSide = cropSide
+    if (pendingCrop != null && pendingSide != null) {
+        CropScreen(
+            bitmap = pendingCrop,
+            onBack = {
+                cropSource = null
+                cropSide = null
+            },
+            onDone = { cropped ->
+                setSide(pendingSide, cropped)
+                cropSource = null
+                cropSide = null
+            }
+        )
+        return
     }
 
     Scaffold(
