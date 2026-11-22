@@ -1,6 +1,7 @@
 package com.repdoc.scanner.ui.screens
 
 import android.graphics.Bitmap
+import android.graphics.PointF
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
@@ -150,7 +151,7 @@ fun CropScreen(
                                     val layout = imageLayout(bitmap, canvasSize)
                                     if (layout.scale > 0f) {
                                         val current = corners[index]
-                                        val next = Offset(
+                                        val next = PointF(
                                             (current.x + dragAmount.x / layout.scale)
                                                 .coerceIn(0f, bitmap.width.toFloat()),
                                             (current.y + dragAmount.y / layout.scale)
