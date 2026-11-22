@@ -438,8 +438,9 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             pageId = current.pageId,
             viewModel = viewModel,
             onBack = { screen = Screen.Document(current.documentId) },
-            onOpenText = {
-                screen = Screen.Ocr(current.documentId, current.pageId, autoRun = true)
+            onPageChanged = { pageId -> screen = Screen.PageViewer(current.documentId, pageId) },
+            onOpenText = { pageId ->
+                screen = Screen.Ocr(current.documentId, pageId, autoRun = true)
             }
         )
 
