@@ -1,13 +1,14 @@
 package com.repdoc.scanner.ui
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -20,6 +21,7 @@ import com.repdoc.scanner.ui.screens.FilterScreen
 import com.repdoc.scanner.ui.screens.HomeScreen
 import com.repdoc.scanner.ui.screens.OcrScreen
 import com.repdoc.scanner.util.ImageProcessor
+import com.repdoc.scanner.util.PdfImporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -37,6 +39,7 @@ sealed interface Screen {
 fun RepdocApp(viewModel: AppViewModel = viewModel()) {
     val context = LocalContext.current
     val documents by viewModel.documents.collectAsStateWithLifecycle()
+    val folders by viewModel.folders.collectAsStateWithLifecycle()
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     val scope = rememberCoroutineScope()
 
@@ -56,45 +59,87 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
-            val bitmap = ImageProcessor.decodeBitmap(context, uri)
-            if (bitmap != null) {
-                viewModel.pendingBitmap = bitmap
-                screen = Screen.Crop
+            scope.launch {
+                val bitmap = withContext(Dispatchers.IO) { ImageProcessor.decodeBitmap(context, uri) }
+                if (bitmap != null) {
+                    viewModel.startImport(listOf(bitmap))
+                    screen = Screen.Crop
+                } else {
+                    Toast.makeText(context, "Could not read image", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
 
+    val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val bitmaps = withContext(Dispatchers.IO) { PdfImporter.import(context, uri) }
+                if (bitmaps.isEmpty()) {
+                    Toast.makeText(context, "Could not read PDF", Toast.LENGTH_SHORT).show()
+                } else {
+                    viewModel.startImport(bitmaps)
+                    screen = Screen.Crop
+                }
+            }
+        }
+    }
+
+    fun importImage() {
+        viewModel.beginNewPage()
+        viewModel.activeDocumentId = null
+        importLauncher.launch("image/*")
+    }
+
+    fun importPdf() {
+        viewModel.beginNewPage()
+        viewModel.activeDocumentId = null
+        pdfLauncher.launch(arrayOf("application/pdf"))
+    }
 
     BackHandler(enabled = screen != Screen.Home) { goBack() }
 
     when (val current = screen) {
         Screen.Home -> HomeScreen(
             documents = documents,
+            folders = folders,
             onOpen = { id ->
                 viewModel.activeDocumentId = id
                 screen = Screen.Document(id)
+            },
+            onOpenPage = { documentId, pageId ->
+                viewModel.activeDocumentId = documentId
+                screen = Screen.Ocr(documentId, pageId)
             },
             onScan = {
                 viewModel.beginNewPage()
                 viewModel.activeDocumentId = null
                 screen = Screen.Camera
             },
-            onImport = {
-                viewModel.beginNewPage()
-                viewModel.activeDocumentId = null
-                importLauncher.launch("image/*")
-            },
+            onImportImage = { importImage() },
+            onImportPdf = { importPdf() },
             onDelete = viewModel::delete,
-            onRename = viewModel::rename
+            onRename = viewModel::rename,
+            onCreateFolder = { name -> viewModel.createFolder(name) },
+            onRenameFolder = { id, name -> viewModel.renameFolder(id, name) },
+            onDeleteFolder = { id -> viewModel.deleteFolder(id) },
+            onMoveDocument = { id, folderId -> viewModel.moveDocumentToFolder(id, folderId) },
+            onSearch = { query, folderId -> viewModel.search(query, folderId) }
         )
 
         Screen.Camera -> CameraScreen(
             onClose = { goBack() },
-            onCaptured = { path ->
-                val bitmap = ImageProcessor.decodeFile(path)
-                if (bitmap != null) {
-                    viewModel.pendingBitmap = bitmap
-                    screen = Screen.Crop
+            onCaptured = { paths ->
+                scope.launch {
+                    val bitmaps = withContext(Dispatchers.IO) {
+                        paths.mapNotNull { ImageProcessor.decodeFile(it) }
+                    }
+                    if (bitmaps.isNotEmpty()) {
+                        viewModel.startImport(bitmaps)
+                        screen = Screen.Crop
+                    } else {
+                        Toast.makeText(context, "Could not read captures", Toast.LENGTH_SHORT).show()
+                    }
                 }
             },
             onImport = { importLauncher.launch("image/*") }
@@ -130,8 +175,13 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                     onBack = { screen = Screen.Crop },
                     onSave = {
                         viewModel.savePage(bitmap, viewModel.selectedFilter) { doc ->
-                            viewModel.resetPending()
-                            screen = Screen.Document(doc.id)
+                            val next = viewModel.advancePending()
+                            if (next != null) {
+                                screen = Screen.Crop
+                            } else {
+                                viewModel.resetPending()
+                                screen = Screen.Document(doc.id)
+                            }
                         }
                     }
                 )
@@ -151,6 +201,11 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                 viewModel.beginNewPage()
                 viewModel.activeDocumentId = current.id
                 importLauncher.launch("image/*")
+            },
+            onImportPdf = {
+                viewModel.beginNewPage()
+                viewModel.activeDocumentId = current.id
+                pdfLauncher.launch(arrayOf("application/pdf"))
             },
             onOpenPage = { pageId -> screen = Screen.Ocr(current.id, pageId) },
             onEditPage = { pageId ->

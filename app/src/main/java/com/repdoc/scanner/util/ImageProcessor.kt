@@ -66,6 +66,12 @@ object ImageProcessor {
         )
     }
 
+    fun rotate(bitmap: Bitmap, degrees: Int): Bitmap {
+        if (degrees % 360 == 0) return bitmap
+        val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
     fun cropPerspective(bitmap: Bitmap, corners: List<PointF>): Bitmap {
         if (corners.size != 4) return bitmap
         val top = distance(corners[0], corners[1])

@@ -2,10 +2,12 @@ package com.repdoc.scanner.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.view.Surface
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
@@ -28,6 +30,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FlashAuto
@@ -40,12 +43,15 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,20 +60,26 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import coil.compose.AsyncImage
+import com.repdoc.scanner.util.AutoCrop
+import com.repdoc.scanner.util.ImageProcessor
 import java.io.File
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 
 private val Brand = Color(0xFF00B796)
 
 @Composable
 fun CameraScreen(
     onClose: () -> Unit,
-    onCaptured: (String) -> Unit,
+    onCaptured: (List<String>) -> Unit,
     onImport: () -> Unit
 ) {
     val context = LocalContext.current
@@ -87,6 +99,12 @@ fun CameraScreen(
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var flashMode by remember { mutableStateOf(ImageCapture.FLASH_MODE_OFF) }
     var capturing by remember { mutableStateOf(false) }
+    var autoCapture by remember { mutableStateOf(false) }
+    val capturedFiles = remember { mutableStateListOf<File>() }
+    val autoCaptureState = rememberUpdatedState(autoCapture)
+    val capturingState = rememberUpdatedState(capturing)
+    val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
+    val lastAutoCaptureAt = remember { AtomicLong(0L) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -96,48 +114,11 @@ fun CameraScreen(
         if (!hasPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    DisposableEffect(previewView, hasPermission, lifecycleOwner) {
-        if (!hasPermission) return@DisposableEffect onDispose { }
-        val future = ProcessCameraProvider.getInstance(context)
-        val executor = ContextCompat.getMainExecutor(context)
-        future.addListener({
-            runCatching {
-                val provider = future.get()
-                val preview = Preview.Builder().build().also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
-                }
-                val capture = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                    .build()
-                imageCapture = capture
-                provider.unbindAll()
-                provider.bindToLifecycle(
-                    lifecycleOwner,
-                    CameraSelector.DEFAULT_BACK_CAMERA,
-                    preview,
-                    capture
-                )
-            }.onFailure {
-                Toast.makeText(context, "Camera unavailable", Toast.LENGTH_SHORT).show()
-            }
-        }, executor)
-        onDispose {
-            runCatching {
-                if (future.isDone) future.get().unbindAll()
-            }
-            imageCapture = null
-        }
-    }
-
-    LaunchedEffect(flashMode, imageCapture) {
-        imageCapture?.flashMode = flashMode
-    }
-
     fun capture() {
         val capture = imageCapture ?: return
-        if (capturing) return
+        if (capturingState.value) return
         capturing = true
-        capture.targetRotation = previewView.display.rotation
+        capture.targetRotation = previewView.display?.rotation ?: Surface.ROTATION_0
         val dir = File(context.cacheDir, "captures").apply { mkdirs() }
         val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
         val options = ImageCapture.OutputFileOptions.Builder(file).build()
@@ -147,7 +128,7 @@ fun CameraScreen(
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     capturing = false
-                    onCaptured(file.absolutePath)
+                    capturedFiles.add(file)
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -156,6 +137,84 @@ fun CameraScreen(
                 }
             }
         )
+    }
+
+    DisposableEffect(previewView, hasPermission, lifecycleOwner) {
+        if (!hasPermission) return@DisposableEffect onDispose { }
+        val future = ProcessCameraProvider.getInstance(context)
+        val executor = ContextCompat.getMainExecutor(context)
+        var analysis: ImageAnalysis? = null
+        future.addListener({
+            runCatching {
+                val provider = future.get()
+                val preview = Preview.Builder().build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+                val capture = ImageCapture.Builder()
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .build()
+                val imageAnalysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                    .build()
+                    .also { analyzer ->
+                        analyzer.setAnalyzer(analysisExecutor) { imageProxy ->
+                            try {
+                                if (!autoCaptureState.value) return@setAnalyzer
+                                val now = System.currentTimeMillis()
+                                if (now - lastAutoCaptureAt.get() < 2200 || capturingState.value) {
+                                    return@setAnalyzer
+                                }
+                                val buffer = imageProxy.planes[0].buffer
+                                val bitmap = android.graphics.Bitmap.createBitmap(
+                                    imageProxy.width,
+                                    imageProxy.height,
+                                    android.graphics.Bitmap.Config.ARGB_8888
+                                )
+                                bitmap.copyPixelsFromBuffer(buffer)
+                                val scaled = ImageProcessor.scaled(bitmap, 1100)
+                                val detected = AutoCrop.detect(context, scaled)
+                                if (scaled !== bitmap) scaled.recycle()
+                                bitmap.recycle()
+                                if (detected != null) {
+                                    lastAutoCaptureAt.set(now)
+                                    ContextCompat.getMainExecutor(context).execute { capture() }
+                                }
+                            } catch (_: Throwable) {
+                            } finally {
+                                imageProxy.close()
+                            }
+                        }
+                    }
+                analysis = imageAnalysis
+                imageCapture = capture
+                provider.unbindAll()
+                provider.bindToLifecycle(
+                    lifecycleOwner,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    preview,
+                    capture,
+                    imageAnalysis
+                )
+            }.onFailure {
+                Toast.makeText(context, "Camera unavailable", Toast.LENGTH_SHORT).show()
+            }
+        }, executor)
+        onDispose {
+            runCatching {
+                analysis?.clearAnalyzer()
+                if (future.isDone) future.get().unbindAll()
+            }
+            imageCapture = null
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { analysisExecutor.shutdown() }
+    }
+
+    LaunchedEffect(flashMode, imageCapture) {
+        imageCapture?.flashMode = flashMode
     }
 
     Box(
@@ -186,7 +245,7 @@ fun CameraScreen(
                 corner(right, bottom, -length, -length)
             }
             Text(
-                text = "Align document within frame",
+                text = if (autoCapture) "Auto capture is on" else "Align document within frame",
                 color = Color.White.copy(alpha = 0.9f),
                 fontSize = 13.sp,
                 modifier = Modifier
@@ -230,8 +289,21 @@ fun CameraScreen(
                 Icon(Icons.Outlined.Close, contentDescription = "Close", tint = Color.White)
             }
             Spacer(Modifier.width(4.dp))
-            Text("Auto", color = Color.White, fontSize = 16.sp)
+            Text(
+                "Auto",
+                color = if (autoCapture) Brand else Color.White,
+                fontSize = 16.sp,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { autoCapture = !autoCapture }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
             Spacer(Modifier.weight(1f))
+            if (capturedFiles.isNotEmpty()) {
+                TextButton(onClick = { onCaptured(capturedFiles.map { it.absolutePath }) }) {
+                    Text("Done (${capturedFiles.size})", color = Color.White)
+                }
+            }
             IconButton(
                 onClick = {
                     flashMode = when (flashMode) {
@@ -271,12 +343,39 @@ fun CameraScreen(
                         .padding(start = 28.dp),
                     contentAlignment = Alignment.CenterStart
                 ) {
-                    IconButton(onClick = onImport) {
-                        Icon(
-                            Icons.Outlined.PhotoLibrary,
-                            contentDescription = "Import",
-                            tint = Color.White
-                        )
+                    if (capturedFiles.isNotEmpty()) {
+                        Box {
+                            AsyncImage(
+                                model = capturedFiles.last(),
+                                contentDescription = "Last capture",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(2.dp)
+                                    .clip(CircleShape)
+                                    .background(Brand)
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    capturedFiles.size.toString(),
+                                    color = Color.White,
+                                    fontSize = 9.sp
+                                )
+                            }
+                        }
+                    } else {
+                        IconButton(onClick = onImport) {
+                            Icon(
+                                Icons.Outlined.PhotoLibrary,
+                                contentDescription = "Import",
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
                 Box(
@@ -305,7 +404,7 @@ fun CameraScreen(
             }
             Spacer(Modifier.height(10.dp))
             Text(
-                text = "Scan",
+                text = if (capturedFiles.isEmpty()) "Scan" else "Tap Done to process ${capturedFiles.size} pages",
                 color = Color.White.copy(alpha = 0.8f),
                 fontSize = 12.sp
             )

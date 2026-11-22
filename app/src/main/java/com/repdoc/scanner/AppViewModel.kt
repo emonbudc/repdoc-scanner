@@ -9,7 +9,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.repdoc.scanner.data.Document
 import com.repdoc.scanner.data.DocumentRepository
+import com.repdoc.scanner.data.Folder
+import com.repdoc.scanner.data.SearchHit
 import com.repdoc.scanner.util.DocumentFilter
+import com.repdoc.scanner.util.ImageProcessor
 import com.repdoc.scanner.util.NativeFilters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
@@ -20,8 +23,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = DocumentRepository(application)
     val documents: StateFlow<List<Document>> = repository.documents
+    val folders: StateFlow<List<Folder>> = repository.folders
 
     var pendingBitmap by mutableStateOf<Bitmap?>(null)
+    var pendingBitmaps by mutableStateOf<List<Bitmap>>(emptyList())
+    var pendingIndex by mutableStateOf(0)
     var activeDocumentId by mutableStateOf<String?>(null)
     var selectedFilter by mutableStateOf(DocumentFilter.ORIGINAL)
     var editingDocumentId by mutableStateOf<String?>(null)
@@ -70,11 +76,38 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         editingDocumentId = documentId
         editingPageId = pageId
         pendingBitmap = bitmap
+        pendingBitmaps = emptyList()
+        pendingIndex = 0
         selectedFilter = DocumentFilter.ORIGINAL
+    }
+
+    fun startImport(bitmaps: List<Bitmap>) {
+        if (bitmaps.isEmpty()) return
+        pendingBitmaps = bitmaps
+        pendingIndex = 0
+        pendingBitmap = bitmaps.first()
+        selectedFilter = DocumentFilter.ORIGINAL
+        editingDocumentId = null
+        editingPageId = null
+    }
+
+    fun advancePending(): Bitmap? {
+        if (pendingIndex + 1 < pendingBitmaps.size) {
+            pendingIndex += 1
+            pendingBitmap = pendingBitmaps[pendingIndex]
+            selectedFilter = DocumentFilter.ORIGINAL
+            return pendingBitmap
+        }
+        pendingBitmaps = emptyList()
+        pendingIndex = 0
+        pendingBitmap = null
+        return null
     }
 
     fun beginNewPage() {
         pendingBitmap = null
+        pendingBitmaps = emptyList()
+        pendingIndex = 0
         selectedFilter = DocumentFilter.ORIGINAL
         editingDocumentId = null
         editingPageId = null
@@ -97,8 +130,54 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         repository.updatePageOcr(id, pageId, text)
     }
 
+    fun deletePage(documentId: String, pageId: String) {
+        repository.deletePage(documentId, pageId)
+    }
+
+    fun movePage(documentId: String, pageId: String, toIndex: Int) {
+        repository.movePage(documentId, pageId, toIndex)
+    }
+
+    fun duplicatePage(documentId: String, pageId: String) {
+        repository.duplicatePage(documentId, pageId)
+    }
+
+    fun rotatePage(documentId: String, pageId: String, degrees: Int = 90) {
+        viewModelScope.launch {
+            busy = true
+            val page = repository.document(documentId)?.pages?.firstOrNull { it.id == pageId }
+            if (page != null) {
+                val bitmap = withContext(Dispatchers.IO) {
+                    ImageProcessor.decodeFile(page.imagePath)
+                }
+                if (bitmap != null) {
+                    val rotated = withContext(Dispatchers.Default) {
+                        ImageProcessor.rotate(bitmap, degrees)
+                    }
+                    repository.replacePageImage(documentId, pageId, rotated)
+                }
+            }
+            busy = false
+        }
+    }
+
+    fun createFolder(name: String) = repository.createFolder(name)
+
+    fun renameFolder(folderId: String, name: String) = repository.renameFolder(folderId, name)
+
+    fun deleteFolder(folderId: String) = repository.deleteFolder(folderId)
+
+    fun moveDocumentToFolder(documentId: String, folderId: String?) {
+        repository.moveDocumentToFolder(documentId, folderId)
+    }
+
+    fun search(query: String, folderId: String? = null): List<SearchHit> =
+        repository.search(query, folderId)
+
     fun resetPending() {
         pendingBitmap = null
+        pendingBitmaps = emptyList()
+        pendingIndex = 0
         selectedFilter = DocumentFilter.ORIGINAL
         editingDocumentId = null
         editingPageId = null

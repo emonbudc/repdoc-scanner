@@ -12,19 +12,33 @@ android {
         applicationId = "com.repdoc.scanner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         ndk {
             abiFilters += "arm64-v8a"
         }
     }
 
+    val releaseStore = System.getenv("RELEASE_STORE_FILE")?.let { file(it) }
+    signingConfigs {
+        if (releaseStore?.isFile == true) {
+            create("release") {
+                storeFile = releaseStore
+                storePassword = System.getenv("RELEASE_STORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             isDebuggable = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

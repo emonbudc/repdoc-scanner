@@ -2,9 +2,12 @@ package com.repdoc.scanner.ui.screens
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,9 +28,14 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ArrowForward
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.RotateRight
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PictureAsPdf
@@ -72,6 +80,7 @@ import coil.compose.AsyncImage
 import com.repdoc.scanner.AppViewModel
 import com.repdoc.scanner.R
 import com.repdoc.scanner.data.Page
+import com.repdoc.scanner.util.ExportUtils
 import com.repdoc.scanner.util.ImageExporter
 import com.repdoc.scanner.util.ImageProcessor
 import com.repdoc.scanner.util.OcrEngine
@@ -82,6 +91,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private val Brand = Color(0xFF00B796)
+private val Muted = Color(0xFF9C9C9C)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,6 +101,7 @@ fun DocumentScreen(
     onBack: () -> Unit,
     onAddPage: () -> Unit,
     onImportPage: () -> Unit,
+    onImportPdf: () -> Unit,
     onOpenPage: (String) -> Unit,
     onEditPage: (String) -> Unit,
     onDeleted: () -> Unit
@@ -105,6 +116,8 @@ fun DocumentScreen(
     var ocrBusy by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
     var exportingImages by remember { mutableStateOf(false) }
+    var selectedPage by remember(document.id) { mutableStateOf<Page?>(null) }
+    var deletePageTarget by remember { mutableStateOf<Page?>(null) }
 
     if (document == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -123,7 +136,14 @@ fun DocumentScreen(
                 Toast.makeText(context, "Could not create PDF", Toast.LENGTH_SHORT).show()
                 return@launch
             }
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val downloadsUri = withContext(Dispatchers.IO) {
+                ExportUtils.saveToDownloads(context, file, file.name, "application/pdf")
+            }
+            if (downloadsUri != null) {
+                Toast.makeText(context, "Saved to Downloads", Toast.LENGTH_SHORT).show()
+            }
+            val uri = downloadsUri
+                ?: FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/pdf"
                 putExtra(Intent.EXTRA_STREAM, uri)
@@ -143,9 +163,18 @@ fun DocumentScreen(
                 Toast.makeText(context, "Could not export images", Toast.LENGTH_SHORT).show()
                 return@launch
             }
-            val uris = ArrayList(files.map {
-                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", it)
+            val safeName = document.name.replace(Regex("[^A-Za-z0-9._ -]"), "_").ifBlank { "Document" }
+            val uris = ArrayList(files.mapIndexed { index, file ->
+                ExportUtils.saveToDownloads(
+                    context,
+                    file,
+                    "${safeName}_page_${index + 1}.jpg",
+                    "image/jpeg"
+                ) ?: FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
             })
+            if (uris.isNotEmpty()) {
+                Toast.makeText(context, "Saved ${uris.size} images to Downloads", Toast.LENGTH_SHORT).show()
+            }
             val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
                 type = "image/jpeg"
                 putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
@@ -178,48 +207,60 @@ fun DocumentScreen(
             TopAppBar(
                 title = {
                     Text(
-                        document.name,
+                        if (selectedPage != null) "1 selected" else document.name,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Outlined.ArrowBack, contentDescription = "Back")
+                    IconButton(onClick = { if (selectedPage != null) selectedPage = null else onBack() }) {
+                        Icon(
+                            Icons.Outlined.ArrowBack,
+                            contentDescription = "Back"
+                        )
                     }
                 },
                 actions = {
-                    IconButton(onClick = onImportPage) {
-                        Icon(Icons.Outlined.PhotoLibrary, contentDescription = "Import page")
-                    }
-                    IconButton(onClick = { runOcr() }, enabled = !ocrBusy) {
-                        Icon(Icons.Outlined.TextFields, contentDescription = "OCR all")
-                    }
-                    IconButton(onClick = { exportPdf() }, enabled = !exporting) {
-                        Icon(Icons.Outlined.PictureAsPdf, contentDescription = "Export PDF")
-                    }
-                    IconButton(onClick = { exportImages() }, enabled = !exportingImages) {
-                        Icon(Icons.Outlined.Image, contentDescription = "Export images")
-                    }
-                    Box {
-                        IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More")
+                    if (selectedPage == null) {
+                        IconButton(onClick = onImportPage) {
+                            Icon(Icons.Outlined.PhotoLibrary, contentDescription = "Import page")
                         }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Rename") },
-                                onClick = {
-                                    menuOpen = false
-                                    renameOpen = true
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Delete") },
-                                onClick = {
-                                    menuOpen = false
-                                    deleteOpen = true
-                                }
-                            )
+                        IconButton(onClick = { runOcr() }, enabled = !ocrBusy) {
+                            Icon(Icons.Outlined.TextFields, contentDescription = "OCR all")
+                        }
+                        IconButton(onClick = { exportPdf() }, enabled = !exporting) {
+                            Icon(Icons.Outlined.PictureAsPdf, contentDescription = "Export PDF")
+                        }
+                        IconButton(onClick = { exportImages() }, enabled = !exportingImages) {
+                            Icon(Icons.Outlined.Image, contentDescription = "Export images")
+                        }
+                        Box {
+                            IconButton(onClick = { menuOpen = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More")
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Import PDF") },
+                                    onClick = {
+                                        menuOpen = false
+                                        onImportPdf()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Rename") },
+                                    onClick = {
+                                        menuOpen = false
+                                        renameOpen = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Delete") },
+                                    onClick = {
+                                        menuOpen = false
+                                        deleteOpen = true
+                                    }
+                                )
+                            }
                         }
                     }
                 },
@@ -233,29 +274,62 @@ fun DocumentScreen(
         },
         bottomBar = {
             Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onImportPage,
-                        modifier = Modifier.weight(1f)
+                val page = selectedPage
+                if (page != null) {
+                    val index = document.pages.indexOfFirst { it.id == page.id }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 6.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Import")
+                        PageAction(Icons.Outlined.ArrowBack, "Left", enabled = index > 0) {
+                            viewModel.movePage(document.id, page.id, index - 1)
+                            selectedPage = null
+                        }
+                        PageAction(Icons.Outlined.ArrowForward, "Right", enabled = index < document.pages.lastIndex) {
+                            viewModel.movePage(document.id, page.id, index + 1)
+                            selectedPage = null
+                        }
+                        PageAction(Icons.Outlined.RotateRight, "Rotate") {
+                            viewModel.rotatePage(document.id, page.id)
+                            selectedPage = null
+                        }
+                        PageAction(Icons.Default.ContentCopy, "Copy") {
+                            viewModel.duplicatePage(document.id, page.id)
+                            selectedPage = null
+                        }
+                        PageAction(Icons.Outlined.Delete, "Delete") {
+                            deletePageTarget = page
+                        }
                     }
-                    Button(
-                        onClick = onAddPage,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = Brand)
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Add page")
+                        OutlinedButton(
+                            onClick = onImportPage,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Import")
+                        }
+                        Button(
+                            onClick = onAddPage,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = Brand)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Add page")
+                        }
                     }
                 }
             }
@@ -300,13 +374,18 @@ fun DocumentScreen(
                         PageTile(
                             index = index,
                             page = page,
-                            onClick = { onOpenPage(page.id) },
+                            selected = selectedPage?.id == page.id,
+                            onClick = {
+                                if (selectedPage != null) selectedPage = page
+                                else onOpenPage(page.id)
+                            },
+                            onLongClick = { selectedPage = page },
                             onEdit = { onEditPage(page.id) }
                         )
                     }
                 }
             }
-            if (ocrBusy || exporting || exportingImages) {
+            if (ocrBusy || exporting || exportingImages || viewModel.busy) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -320,7 +399,8 @@ fun DocumentScreen(
                             when {
                                 ocrBusy -> "Recognizing text…"
                                 exportingImages -> "Exporting images…"
-                                else -> "Creating PDF…"
+                                exporting -> "Creating PDF…"
+                                else -> "Working…"
                             }
                         )
                     }
@@ -356,6 +436,26 @@ fun DocumentScreen(
         )
     }
 
+    deletePageTarget?.let { page ->
+        AlertDialog(
+            onDismissRequest = { deletePageTarget = null },
+            title = { Text("Delete page?") },
+            text = { Text("This removes the selected page from the document.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deletePage(document.id, page.id)
+                        selectedPage = null
+                        deletePageTarget = null
+                    }
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletePageTarget = null }) { Text("Cancel") }
+            }
+        )
+    }
+
     if (deleteOpen) {
         AlertDialog(
             onDismissRequest = { deleteOpen = false },
@@ -378,13 +478,54 @@ fun DocumentScreen(
 }
 
 @Composable
-private fun PageTile(index: Int, page: Page, onClick: () -> Unit, onEdit: () -> Unit) {
+private fun PageAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = if (enabled) MaterialTheme.colorScheme.onSurface else Muted,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            label,
+            fontSize = 10.sp,
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else Muted
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PageTile(
+    index: Int,
+    page: Page,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onEdit: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(4.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick)
+            .then(
+                if (selected) Modifier.border(2.dp, Brand, RoundedCornerShape(4.dp))
+                else Modifier
+            )
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
         Box(
             modifier = Modifier
@@ -398,6 +539,21 @@ private fun PageTile(index: Int, page: Page, onClick: () -> Unit, onEdit: () -> 
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Brand.copy(alpha = 0.22f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = "Selected",
+                        tint = Color.White,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+            }
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
