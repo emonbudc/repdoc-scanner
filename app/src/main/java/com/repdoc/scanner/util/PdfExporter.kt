@@ -1,10 +1,7 @@
 package com.repdoc.scanner.util
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.pdf.PdfDocument
@@ -13,9 +10,8 @@ import java.io.File
 
 object PdfExporter {
 
-    private const val PAGE_WIDTH = 595
-    private const val PAGE_HEIGHT = 842
-    private const val MARGIN = 24f
+    private const val PORTRAIT_WIDTH = 595
+    private const val LANDSCAPE_WIDTH = 842
 
     fun export(context: Context, document: Document): File? {
         if (document.pages.isEmpty()) return null
@@ -26,9 +22,19 @@ object PdfExporter {
         try {
             document.pages.forEachIndexed { index, page ->
                 val bitmap = BitmapFactory.decodeFile(page.imagePath) ?: return@forEachIndexed
-                val info = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, index + 1).create()
+                val pageWidth = if (bitmap.width >= bitmap.height) LANDSCAPE_WIDTH else PORTRAIT_WIDTH
+                val pageHeight = (pageWidth.toFloat() * bitmap.height / bitmap.width)
+                    .toInt()
+                    .coerceAtLeast(1)
+                val info = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, index + 1).create()
                 val pdfPage = pdf.startPage(info)
-                drawPage(pdfPage.canvas, bitmap)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+                pdfPage.canvas.drawBitmap(
+                    bitmap,
+                    null,
+                    RectF(0f, 0f, pageWidth.toFloat(), pageHeight.toFloat()),
+                    paint
+                )
                 pdf.finishPage(pdfPage)
             }
             output.outputStream().use { pdf.writeTo(it) }
@@ -39,18 +45,5 @@ object PdfExporter {
         } finally {
             pdf.close()
         }
-    }
-
-    private fun drawPage(canvas: Canvas, bitmap: Bitmap) {
-        canvas.drawColor(Color.WHITE)
-        val availableWidth = PAGE_WIDTH - MARGIN * 2
-        val availableHeight = PAGE_HEIGHT - MARGIN * 2
-        val scale = minOf(availableWidth / bitmap.width, availableHeight / bitmap.height)
-        val width = bitmap.width * scale
-        val height = bitmap.height * scale
-        val left = (PAGE_WIDTH - width) / 2f
-        val top = (PAGE_HEIGHT - height) / 2f
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        canvas.drawBitmap(bitmap, null, RectF(left, top, left + width, top + height), paint)
     }
 }

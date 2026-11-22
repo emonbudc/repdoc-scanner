@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.TextFields
@@ -70,6 +71,7 @@ import coil.compose.AsyncImage
 import com.repdoc.scanner.AppViewModel
 import com.repdoc.scanner.R
 import com.repdoc.scanner.data.Page
+import com.repdoc.scanner.util.ImageExporter
 import com.repdoc.scanner.util.ImageProcessor
 import com.repdoc.scanner.util.OcrEngine
 import com.repdoc.scanner.util.PdfExporter
@@ -100,6 +102,7 @@ fun DocumentScreen(
     var deleteOpen by remember { mutableStateOf(false) }
     var ocrBusy by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
+    var exportingImages by remember { mutableStateOf(false) }
 
     if (document == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -125,6 +128,28 @@ fun DocumentScreen(
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(Intent.createChooser(intent, "Share PDF"))
+        }
+    }
+
+    fun exportImages() {
+        if (exportingImages) return
+        exportingImages = true
+        scope.launch {
+            val files = withContext(Dispatchers.IO) { ImageExporter.export(context, document) }
+            exportingImages = false
+            if (files.isEmpty()) {
+                Toast.makeText(context, "Could not export images", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val uris = ArrayList(files.map {
+                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", it)
+            })
+            val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                type = "image/jpeg"
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(intent, "Share images"))
         }
     }
 
@@ -170,6 +195,9 @@ fun DocumentScreen(
                     }
                     IconButton(onClick = { exportPdf() }, enabled = !exporting) {
                         Icon(Icons.Outlined.PictureAsPdf, contentDescription = "Export PDF")
+                    }
+                    IconButton(onClick = { exportImages() }, enabled = !exportingImages) {
+                        Icon(Icons.Outlined.Image, contentDescription = "Export images")
                     }
                     Box {
                         IconButton(onClick = { menuOpen = true }) {
@@ -275,7 +303,7 @@ fun DocumentScreen(
                     }
                 }
             }
-            if (ocrBusy || exporting) {
+            if (ocrBusy || exporting || exportingImages) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -285,7 +313,13 @@ fun DocumentScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = Brand)
                         Spacer(Modifier.height(10.dp))
-                        Text(if (ocrBusy) "Recognizing text…" else "Creating PDF…")
+                        Text(
+                            when {
+                                ocrBusy -> "Recognizing text…"
+                                exportingImages -> "Exporting images…"
+                                else -> "Creating PDF…"
+                            }
+                        )
                     }
                 }
             }
