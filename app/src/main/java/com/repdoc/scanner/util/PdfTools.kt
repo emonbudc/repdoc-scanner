@@ -96,33 +96,50 @@ object PdfTools {
         return try {
             for (uri in uris) {
                 if (pageIndex >= maxPages) break
-                context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
-                    PdfRenderer(descriptor).use { renderer ->
-                        for (index in 0 until renderer.pageCount) {
-                            if (pageIndex >= maxPages) break
-                            renderer.openPage(index).use { page ->
-                                val longest = max(page.width, page.height).coerceAtLeast(1)
-                                val scale = min(2.0f, 2200f / longest)
-                                val width = (page.width * scale).roundToInt().coerceAtLeast(1)
-                                val height = (page.height * scale).roundToInt().coerceAtLeast(1)
-                                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                                Canvas(bitmap).drawColor(Color.WHITE)
-                                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                                val pageWidth = if (width >= height) 842 else 595
-                                val pageHeight = (pageWidth.toFloat() * height / width)
-                                    .roundToInt()
-                                    .coerceAtLeast(1)
-                                val info = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageIndex + 1).create()
-                                val outPage = pdf.startPage(info)
-                                outPage.canvas.drawBitmap(
-                                    bitmap,
-                                    null,
-                                    RectF(0f, 0f, pageWidth.toFloat(), pageHeight.toFloat()),
-                                    Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-                                )
-                                pdf.finishPage(outPage)
-                                bitmap.recycle()
-                                pageIndex++
+                runCatching {
+                    context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                        PdfRenderer(descriptor).use { renderer ->
+                            for (index in 0 until renderer.pageCount) {
+                                if (pageIndex >= maxPages) break
+                                renderer.openPage(index).use { page ->
+                                    val longest = max(page.width, page.height).coerceAtLeast(1)
+                                    val scale = min(2.0f, 2200f / longest)
+                                    val width = (page.width * scale).roundToInt().coerceAtLeast(1)
+                                    val height = (page.height * scale).roundToInt().coerceAtLeast(1)
+                                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                                    try {
+                                        Canvas(bitmap).drawColor(Color.WHITE)
+                                        page.render(
+                                            bitmap,
+                                            null,
+                                            null,
+                                            PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
+                                        )
+                                        val pageWidth = if (width >= height) 842 else 595
+                                        val pageHeight = (pageWidth.toFloat() * height / width)
+                                            .roundToInt()
+                                            .coerceAtLeast(1)
+                                        val info = PdfDocument.PageInfo.Builder(
+                                            pageWidth,
+                                            pageHeight,
+                                            pageIndex + 1
+                                        ).create()
+                                        val outPage = pdf.startPage(info)
+                                        outPage.canvas.drawBitmap(
+                                            bitmap,
+                                            null,
+                                            RectF(0f, 0f, pageWidth.toFloat(), pageHeight.toFloat()),
+                                            Paint(
+                                                Paint.ANTI_ALIAS_FLAG or
+                                                    Paint.FILTER_BITMAP_FLAG
+                                            )
+                                        )
+                                        pdf.finishPage(outPage)
+                                        pageIndex++
+                                    } finally {
+                                        bitmap.recycle()
+                                    }
+                                }
                             }
                         }
                     }

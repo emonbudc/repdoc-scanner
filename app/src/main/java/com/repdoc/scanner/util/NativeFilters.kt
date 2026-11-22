@@ -11,12 +11,13 @@ import com.intsig.nativelib.ImageProcessor
 import com.intsig.nativelib.MagicEnhancer
 import com.intsig.nativelib.PageScanner
 import com.intsig.scanner.ScannerEngine
+import com.repdoc.scanner.BuildConfig
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
 object NativeFilters {
 
-    private const val LICENSE_KEY = "79421895ae6636767d7300455003-PnzFpnaare"
+    private val LICENSE_KEY = BuildConfig.NATIVE_LICENSE_KEY
 
     private var scannerReady = false
     private var magicReady = false
@@ -31,6 +32,7 @@ object NativeFilters {
         attempted = true
         val app = context.applicationContext
         scannerReady = runCatching {
+            if (LICENSE_KEY.isBlank()) return@runCatching false
             System.loadLibrary("mainstone")
             System.loadLibrary("scannercs")
             ScannerEngine.setLogLevel(2)
@@ -63,10 +65,13 @@ object NativeFilters {
         }.getOrDefault(false)
     }
 
+    @Synchronized
     fun isNativeAvailable(): Boolean = scannerReady
 
+    @Synchronized
     fun isAutoCropAvailable(): Boolean = scannerReady && pageScannerReady
 
+    @Synchronized
     fun detectBorders(imagePath: String): IntArray? {
         if (!scannerReady || threadId < 0) return null
         return runCatching {
@@ -74,6 +79,7 @@ object NativeFilters {
         }.getOrNull()
     }
 
+    @Synchronized
     fun dewarp(bitmap: Bitmap, borders: IntArray): Bitmap? {
         if (!pageScannerReady || borders.size != 8) return null
         val copy = bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: return null
@@ -82,6 +88,7 @@ object NativeFilters {
         }.getOrNull()
     }
 
+    @Synchronized
     fun apply(bitmap: Bitmap, filter: DocumentFilter): Bitmap {
         if (filter == DocumentFilter.ORIGINAL) return bitmap.copy(Bitmap.Config.ARGB_8888, false)
         val native = applyNative(bitmap, filter)

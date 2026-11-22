@@ -2,13 +2,20 @@ package com.repdoc.scanner.data
 
 import android.content.Context
 import android.graphics.Bitmap
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -18,246 +25,276 @@ class DocumentRepository(context: Context) {
 
     private val root = File(context.filesDir, "documents").apply { mkdirs() }
     private val foldersFile = File(context.filesDir, "folders.json")
+    private val mutex = Mutex()
     private val _documents = MutableStateFlow<List<Document>>(emptyList())
     val documents: StateFlow<List<Document>> = _documents.asStateFlow()
     private val _folders = MutableStateFlow<List<Folder>>(emptyList())
     val folders: StateFlow<List<Folder>> = _folders.asStateFlow()
 
-    init {
-        reloadFolders()
-        reload()
+    suspend fun reload() = withContext(Dispatchers.IO) {
+        mutex.withLock { reloadLocked() }
     }
 
-    @Synchronized
-    fun reload() {
-        val docs = root.listFiles()
-            ?.filter { it.isDirectory }
-            ?.mapNotNull(::readDocument)
-            ?.sortedByDescending { it.updatedAt }
-            ?: emptyList()
-        _documents.value = docs
+    suspend fun reloadFolders() = withContext(Dispatchers.IO) {
+        mutex.withLock { reloadFoldersLocked() }
     }
 
-    @Synchronized
-    fun reloadFolders() {
-        _folders.value = readFolders()
-    }
-
-    @Synchronized
-    fun createDocument(name: String = defaultName(), folderId: String? = null): Document {
-        val id = UUID.randomUUID().toString()
-        val dir = File(root, id).apply { mkdirs() }
-        val now = System.currentTimeMillis()
-        val doc = Document(id, name, now, now, emptyList(), folderId)
-        writeDocument(dir, doc)
-        reload()
-        return doc
-    }
-
-    @Synchronized
-    fun createFolder(name: String): Folder {
-        val folder = Folder(UUID.randomUUID().toString(), name.trim().ifBlank { "Folder" }, System.currentTimeMillis())
-        _folders.value = (_folders.value + folder).sortedBy { it.name.lowercase(Locale.US) }
-        writeFolders(_folders.value)
-        return folder
-    }
-
-    @Synchronized
-    fun renameFolder(folderId: String, name: String): Folder? {
-        val folder = _folders.value.firstOrNull { it.id == folderId } ?: return null
-        val updated = folder.copy(name = name.trim().ifEmpty { folder.name })
-        _folders.value = _folders.value.map { if (it.id == folderId) updated else it }
-        writeFolders(_folders.value)
-        return updated
-    }
-
-    @Synchronized
-    fun deleteFolder(folderId: String) {
-        root.listFiles()
-            ?.filter { it.isDirectory }
-            ?.forEach { dir ->
-                val doc = readDocument(dir) ?: return@forEach
-                if (doc.folderId == folderId) {
-                    writeDocument(dir, doc.copy(folderId = null))
-                }
+    suspend fun createDocument(name: String = defaultName(), folderId: String? = null): Document =
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val id = UUID.randomUUID().toString()
+                val dir = File(root, id).apply { mkdirs() }
+                val now = System.currentTimeMillis()
+                val doc = Document(id, name, now, now, emptyList(), folderId)
+                writeDocument(dir, doc)
+                reloadLocked()
+                doc
             }
-        _folders.value = _folders.value.filterNot { it.id == folderId }
-        writeFolders(_folders.value)
-        reload()
-    }
-
-    @Synchronized
-    fun moveDocumentToFolder(documentId: String, folderId: String?): Document? {
-        val dir = File(root, documentId)
-        val current = readDocument(dir) ?: return null
-        val updated = current.copy(
-            folderId = folderId,
-            updatedAt = System.currentTimeMillis()
-        )
-        writeDocument(dir, updated)
-        reload()
-        return updated
-    }
-
-    @Synchronized
-    fun addPage(documentId: String, bitmap: Bitmap, original: Bitmap = bitmap): Document? {
-        val dir = File(root, documentId)
-        val current = readDocument(dir) ?: return null
-        val pageId = UUID.randomUUID().toString()
-        val imageFile = File(dir, "page_$pageId.jpg")
-        FileOutputStream(imageFile).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
         }
-        val originalFile = File(dir, "page_${pageId}_original.jpg")
-        FileOutputStream(originalFile).use { out ->
-            original.compress(Bitmap.CompressFormat.JPEG, 92, out)
+
+    suspend fun createFolder(name: String): Folder = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val folder = Folder(
+                UUID.randomUUID().toString(),
+                name.trim().ifBlank { "Folder" },
+                System.currentTimeMillis()
+            )
+            _folders.value = (_folders.value + folder).sortedBy { it.name.lowercase(Locale.US) }
+            writeFolders(_folders.value)
+            folder
         }
-        val page = Page(pageId, imageFile.absolutePath, originalImagePath = originalFile.absolutePath)
-        val updated = current.copy(
-            pages = current.pages + page,
-            updatedAt = System.currentTimeMillis()
-        )
-        writeDocument(dir, updated)
-        reload()
-        return updated
     }
 
-    @Synchronized
-    fun replacePageImage(
+    suspend fun renameFolder(folderId: String, name: String): Folder? = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val folder = _folders.value.firstOrNull { it.id == folderId } ?: return@withLock null
+            val updated = folder.copy(name = name.trim().ifEmpty { folder.name })
+            _folders.value = _folders.value.map { if (it.id == folderId) updated else it }
+            writeFolders(_folders.value)
+            updated
+        }
+    }
+
+    suspend fun deleteFolder(folderId: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            root.listFiles()
+                ?.filter { it.isDirectory }
+                ?.forEach { dir ->
+                    val doc = readDocument(dir) ?: return@forEach
+                    if (doc.folderId == folderId) {
+                        writeDocument(dir, doc.copy(folderId = null))
+                    }
+                }
+            _folders.value = _folders.value.filterNot { it.id == folderId }
+            writeFolders(_folders.value)
+            reloadLocked()
+        }
+    }
+
+    suspend fun moveDocumentToFolder(documentId: String, folderId: String?): Document? =
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val dir = File(root, documentId)
+                val current = readDocument(dir) ?: return@withLock null
+                val updated = current.copy(
+                    folderId = folderId,
+                    updatedAt = System.currentTimeMillis()
+                )
+                writeDocument(dir, updated)
+                reloadLocked()
+                updated
+            }
+        }
+
+    suspend fun addPage(
+        documentId: String,
+        bitmap: Bitmap,
+        original: Bitmap = bitmap,
+        filterName: String? = null
+    ): Document? = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val dir = File(root, documentId)
+            val current = readDocument(dir) ?: return@withLock null
+            val pageId = UUID.randomUUID().toString()
+            val imageFile = File(dir, "page_$pageId.jpg")
+            writeJpeg(bitmap, imageFile)
+            val originalFile = File(dir, "page_${pageId}_original.jpg")
+            try {
+                writeJpeg(original, originalFile)
+            } catch (error: Throwable) {
+                imageFile.delete()
+                originalFile.delete()
+                throw error
+            }
+            val page = Page(
+                pageId,
+                imageFile.absolutePath,
+                originalImagePath = originalFile.absolutePath,
+                filterName = filterName
+            )
+            val updated = current.copy(
+                pages = current.pages + page,
+                updatedAt = System.currentTimeMillis()
+            )
+            writeDocument(dir, updated)
+            reloadLocked()
+            updated
+        }
+    }
+
+    suspend fun replacePageImage(
         documentId: String,
         pageId: String,
         bitmap: Bitmap,
         original: Bitmap? = null,
-        updateOriginal: Boolean = true
-    ): Document? {
-        val dir = File(root, documentId)
-        val current = readDocument(dir) ?: return null
-        val oldPage = current.pages.firstOrNull { it.id == pageId } ?: return null
-        val imageFile = File(dir, "page_${pageId}_${System.currentTimeMillis()}.jpg")
-        FileOutputStream(imageFile).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
-        }
-        var originalPath = oldPage.originalImagePath?.takeIf { File(it).isFile }
-        if (updateOriginal) {
-            val source = original ?: bitmap
-            val originalFile = File(dir, "page_${pageId}_original_${System.currentTimeMillis()}.jpg")
-            FileOutputStream(originalFile).use { out ->
-                source.compress(Bitmap.CompressFormat.JPEG, 92, out)
-            }
-            if (originalPath != null && originalPath != originalFile.absolutePath) {
-                runCatching { File(originalPath).delete() }
-            }
-            originalPath = originalFile.absolutePath
-        } else if (originalPath == null) {
-            val originalFile = File(dir, "page_${pageId}_original_${System.currentTimeMillis()}.jpg")
-            if (runCatching { File(oldPage.imagePath).copyTo(originalFile, overwrite = true) }.isSuccess) {
-                originalPath = originalFile.absolutePath
-            }
-        }
-        val updated = current.copy(
-            pages = current.pages.map { page ->
-                if (page.id == pageId) {
-                    page.copy(imagePath = imageFile.absolutePath, originalImagePath = originalPath)
-                } else {
-                    page
+        updateOriginal: Boolean = true,
+        filterName: String? = null,
+        updateFilter: Boolean = false
+    ): Document? = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val dir = File(root, documentId)
+            val current = readDocument(dir) ?: return@withLock null
+            val oldPage = current.pages.firstOrNull { it.id == pageId } ?: return@withLock null
+            val imageFile = File(dir, "page_${pageId}_${System.currentTimeMillis()}.jpg")
+            writeJpeg(bitmap, imageFile)
+            var originalPath = oldPage.originalImagePath?.takeIf { File(it).isFile }
+            if (updateOriginal) {
+                val source = original ?: bitmap
+                val originalFile = File(dir, "page_${pageId}_original_${System.currentTimeMillis()}.jpg")
+                writeJpeg(source, originalFile)
+                if (originalPath != null && originalPath != originalFile.absolutePath) {
+                    runCatching { File(originalPath).delete() }
                 }
-            },
-            updatedAt = System.currentTimeMillis()
-        )
-        writeDocument(dir, updated)
-        reload()
-        if (oldPage.imagePath != imageFile.absolutePath) {
-            runCatching { File(oldPage.imagePath).delete() }
+                originalPath = originalFile.absolutePath
+            } else if (originalPath == null) {
+                val originalFile = File(dir, "page_${pageId}_original_${System.currentTimeMillis()}.jpg")
+                if (copyFileAtomic(File(oldPage.imagePath), originalFile)) {
+                    originalPath = originalFile.absolutePath
+                }
+            }
+            val updated = current.copy(
+                pages = current.pages.map { page ->
+                    if (page.id == pageId) {
+                        page.copy(
+                            imagePath = imageFile.absolutePath,
+                            originalImagePath = originalPath,
+                            filterName = if (updateFilter) filterName else page.filterName
+                        )
+                    } else {
+                        page
+                    }
+                },
+                updatedAt = System.currentTimeMillis()
+            )
+            writeDocument(dir, updated)
+            reloadLocked()
+            if (oldPage.imagePath != imageFile.absolutePath) {
+                runCatching { File(oldPage.imagePath).delete() }
+            }
+            updated
         }
-        return updated
     }
 
-    @Synchronized
-    fun deletePage(documentId: String, pageId: String): Document? {
-        val dir = File(root, documentId)
-        val current = readDocument(dir) ?: return null
-        val page = current.pages.firstOrNull { it.id == pageId } ?: return null
-        val updated = current.copy(
-            pages = current.pages.filterNot { it.id == pageId },
-            updatedAt = System.currentTimeMillis()
-        )
-        writeDocument(dir, updated)
-        runCatching { File(page.imagePath).delete() }
-        page.originalImagePath?.let { runCatching { File(it).delete() } }
-        reload()
-        return updated
-    }
-
-    @Synchronized
-    fun movePage(documentId: String, pageId: String, toIndex: Int): Document? {
-        val dir = File(root, documentId)
-        val current = readDocument(dir) ?: return null
-        val pages = current.pages.toMutableList()
-        val fromIndex = pages.indexOfFirst { it.id == pageId }
-        if (fromIndex < 0) return null
-        val page = pages.removeAt(fromIndex)
-        pages.add(toIndex.coerceIn(0, pages.size), page)
-        val updated = current.copy(pages = pages, updatedAt = System.currentTimeMillis())
-        writeDocument(dir, updated)
-        reload()
-        return updated
-    }
-
-    @Synchronized
-    fun duplicatePage(documentId: String, pageId: String): Document? {
-        val dir = File(root, documentId)
-        val current = readDocument(dir) ?: return null
-        val index = current.pages.indexOfFirst { it.id == pageId }
-        if (index < 0) return null
-        val source = current.pages[index]
-        val newId = UUID.randomUUID().toString()
-        val newFile = File(dir, "page_$newId.jpg")
-        if (!runCatching { File(source.imagePath).copyTo(newFile, overwrite = true) }.isSuccess) return null
-        val newOriginal = File(dir, "page_${newId}_original.jpg")
-        source.originalImagePath?.let { path ->
-            runCatching { File(path).copyTo(newOriginal, overwrite = true) }
+    suspend fun deletePage(documentId: String, pageId: String): Document? =
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val dir = File(root, documentId)
+                val current = readDocument(dir) ?: return@withLock null
+                val page = current.pages.firstOrNull { it.id == pageId } ?: return@withLock null
+                val updated = current.copy(
+                    pages = current.pages.filterNot { it.id == pageId },
+                    updatedAt = System.currentTimeMillis()
+                )
+                writeDocument(dir, updated)
+                runCatching { File(page.imagePath).delete() }
+                page.originalImagePath?.let { runCatching { File(it).delete() } }
+                reloadLocked()
+                updated
+            }
         }
-        val copy = source.copy(
-            id = newId,
-            imagePath = newFile.absolutePath,
-            originalImagePath = newOriginal.takeIf { it.isFile }?.absolutePath
-        )
-        val pages = current.pages.toMutableList().apply { add(index + 1, copy) }
-        val updated = current.copy(pages = pages, updatedAt = System.currentTimeMillis())
-        writeDocument(dir, updated)
-        reload()
-        return updated
-    }
 
-    @Synchronized
-    fun updatePageOcr(documentId: String, pageId: String, text: String): Document? {
-        val dir = File(root, documentId)
-        val current = readDocument(dir) ?: return null
-        val updated = current.copy(
-            pages = current.pages.map { page ->
-                if (page.id == pageId) page.copy(ocrText = text) else page
-            },
-            updatedAt = System.currentTimeMillis()
-        )
-        writeDocument(dir, updated)
-        reload()
-        return updated
-    }
+    suspend fun movePage(documentId: String, pageId: String, toIndex: Int): Document? =
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val dir = File(root, documentId)
+                val current = readDocument(dir) ?: return@withLock null
+                val pages = current.pages.toMutableList()
+                val fromIndex = pages.indexOfFirst { it.id == pageId }
+                if (fromIndex < 0) return@withLock null
+                val page = pages.removeAt(fromIndex)
+                pages.add(toIndex.coerceIn(0, pages.size), page)
+                val updated = current.copy(pages = pages, updatedAt = System.currentTimeMillis())
+                writeDocument(dir, updated)
+                reloadLocked()
+                updated
+            }
+        }
 
-    @Synchronized
-    fun renameDocument(documentId: String, name: String): Document? {
-        val dir = File(root, documentId)
-        val current = readDocument(dir) ?: return null
-        val updated = current.copy(name = name.trim().ifEmpty { current.name }, updatedAt = System.currentTimeMillis())
-        writeDocument(dir, updated)
-        reload()
-        return updated
-    }
+    suspend fun duplicatePage(documentId: String, pageId: String): Document? =
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val dir = File(root, documentId)
+                val current = readDocument(dir) ?: return@withLock null
+                val index = current.pages.indexOfFirst { it.id == pageId }
+                if (index < 0) return@withLock null
+                val source = current.pages[index]
+                val newId = UUID.randomUUID().toString()
+                val newFile = File(dir, "page_$newId.jpg")
+                if (!copyFileAtomic(File(source.imagePath), newFile)) return@withLock null
+                val newOriginal = File(dir, "page_${newId}_original.jpg")
+                source.originalImagePath?.let { path ->
+                    copyFileAtomic(File(path), newOriginal)
+                }
+                val copy = source.copy(
+                    id = newId,
+                    imagePath = newFile.absolutePath,
+                    originalImagePath = newOriginal.takeIf { it.isFile }?.absolutePath
+                )
+                val pages = current.pages.toMutableList().apply { add(index + 1, copy) }
+                val updated = current.copy(pages = pages, updatedAt = System.currentTimeMillis())
+                writeDocument(dir, updated)
+                reloadLocked()
+                updated
+            }
+        }
 
-    @Synchronized
-    fun deleteDocument(documentId: String) {
-        File(root, documentId).deleteRecursively()
-        reload()
+    suspend fun updatePageOcr(documentId: String, pageId: String, text: String): Document? =
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val dir = File(root, documentId)
+                val current = readDocument(dir) ?: return@withLock null
+                val updated = current.copy(
+                    pages = current.pages.map { page ->
+                        if (page.id == pageId) page.copy(ocrText = text) else page
+                    },
+                    updatedAt = System.currentTimeMillis()
+                )
+                writeDocument(dir, updated)
+                reloadLocked()
+                updated
+            }
+        }
+
+    suspend fun renameDocument(documentId: String, name: String): Document? =
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val dir = File(root, documentId)
+                val current = readDocument(dir) ?: return@withLock null
+                val updated = current.copy(
+                    name = name.trim().ifEmpty { current.name },
+                    updatedAt = System.currentTimeMillis()
+                )
+                writeDocument(dir, updated)
+                reloadLocked()
+                updated
+            }
+        }
+
+    suspend fun deleteDocument(documentId: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            File(root, documentId).deleteRecursively()
+            reloadLocked()
+        }
     }
 
     fun document(documentId: String): Document? = _documents.value.firstOrNull { it.id == documentId }
@@ -280,6 +317,19 @@ class DocumentRepository(context: Context) {
             }
         }
         return hits
+    }
+
+    private fun reloadLocked() {
+        val docs = root.listFiles()
+            ?.filter { it.isDirectory }
+            ?.mapNotNull(::readDocument)
+            ?.sortedByDescending { it.updatedAt }
+            ?: emptyList()
+        _documents.value = docs
+    }
+
+    private fun reloadFoldersLocked() {
+        _folders.value = readFolders()
     }
 
     private fun snippetAround(text: String, term: String): String {
@@ -323,7 +373,7 @@ class DocumentRepository(context: Context) {
                     .put("createdAt", folder.createdAt)
             )
         }
-        foldersFile.writeText(array.toString())
+        writeTextAtomic(foldersFile, array.toString())
     }
 
     private fun readDocument(dir: File): Document? {
@@ -344,7 +394,8 @@ class DocumentRepository(context: Context) {
                                 ocrText = p.optString("ocr").takeIf { it.isNotBlank() },
                                 originalImagePath = p.optString("original")
                                     .takeIf { it.isNotBlank() }
-                                    ?.let { File(dir, it).absolutePath }
+                                    ?.let { File(dir, it).absolutePath },
+                                filterName = p.optString("filter").takeIf { it.isNotBlank() }
                             )
                         )
                     }
@@ -370,6 +421,7 @@ class DocumentRepository(context: Context) {
                     .put("image", File(page.imagePath).name)
                     .put("ocr", page.ocrText ?: "")
                     .put("original", page.originalImagePath?.let { File(it).name } ?: "")
+                    .put("filter", page.filterName ?: "")
             )
         }
         val json = JSONObject()
@@ -379,6 +431,72 @@ class DocumentRepository(context: Context) {
             .put("updatedAt", doc.updatedAt)
             .put("folderId", doc.folderId ?: "")
             .put("pages", pages)
-        File(dir, "meta.json").writeText(json.toString())
+        writeTextAtomic(File(dir, "meta.json"), json.toString())
+    }
+
+    private fun writeTextAtomic(file: File, text: String) {
+        val parent = file.parentFile ?: throw IOException("No parent directory for ${file.name}")
+        parent.mkdirs()
+        val temp = File(parent, "${file.name}.tmp")
+        try {
+            FileOutputStream(temp).use { out ->
+                out.write(text.toByteArray(Charsets.UTF_8))
+                out.fd.sync()
+            }
+            moveAtomic(temp, file)
+        } catch (error: Throwable) {
+            temp.delete()
+            throw error
+        }
+    }
+
+    private fun writeJpeg(bitmap: Bitmap, file: File) {
+        val parent = file.parentFile ?: throw IOException("No parent directory for ${file.name}")
+        parent.mkdirs()
+        val temp = File(parent, "${file.name}.tmp")
+        try {
+            FileOutputStream(temp).use { out ->
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)) {
+                    throw IOException("Failed to encode JPEG: ${file.name}")
+                }
+                out.fd.sync()
+            }
+            moveAtomic(temp, file)
+        } catch (error: Throwable) {
+            temp.delete()
+            throw error
+        }
+    }
+
+    private fun copyFileAtomic(source: File, target: File): Boolean {
+        val parent = target.parentFile ?: return false
+        parent.mkdirs()
+        val temp = File(parent, "${target.name}.tmp")
+        return try {
+            source.inputStream().use { input ->
+                FileOutputStream(temp).use { out ->
+                    input.copyTo(out)
+                    out.fd.sync()
+                }
+            }
+            moveAtomic(temp, target)
+            true
+        } catch (_: Throwable) {
+            temp.delete()
+            false
+        }
+    }
+
+    private fun moveAtomic(source: File, target: File) {
+        try {
+            Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+        } catch (_: Throwable) {
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
     }
 }

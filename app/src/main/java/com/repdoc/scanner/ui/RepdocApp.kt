@@ -1,5 +1,6 @@
 package com.repdoc.scanner.ui
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.widget.Toast
@@ -7,12 +8,14 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.repdoc.scanner.AppViewModel
@@ -33,6 +36,7 @@ import com.repdoc.scanner.util.ImageExporter
 import com.repdoc.scanner.util.ImageProcessor
 import com.repdoc.scanner.util.PdfExporter
 import com.repdoc.scanner.util.PdfImporter
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -82,11 +86,12 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
     fun exportImported(document: Document, type: ImportExportType) {
         scope.launch {
             val safeName = document.name.replace(Regex("[^A-Za-z0-9._ -]"), "_").ifBlank { "Document" }
-            val saved = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
+                var saved = 0
+                val shareUris = ArrayList<Uri>()
                 when (type) {
                     ImportExportType.IMAGE -> {
                         val files = ImageExporter.export(context, document)
-                        var count = 0
                         files.forEachIndexed { index, file ->
                             val uri = ExportUtils.saveToDownloads(
                                 context,
@@ -94,22 +99,46 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                                 "${safeName}_page_${index + 1}.jpg",
                                 "image/jpeg"
                             )
-                            if (uri != null) count++
+                            if (uri != null) {
+                                saved++
+                            } else {
+                                shareUris.add(
+                                    FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        file
+                                    )
+                                )
+                            }
                         }
-                        count
                     }
                     ImportExportType.PDF -> {
-                        val file = PdfExporter.export(context, document) ?: return@withContext 0
-                        val uri = ExportUtils.saveToDownloads(
-                            context,
-                            file,
-                            "${safeName}.pdf",
-                            "application/pdf"
-                        )
-                        if (uri != null) 1 else 0
+                        val file = PdfExporter.export(context, document)
+                        if (file != null) {
+                            val uri = ExportUtils.saveToDownloads(
+                                context,
+                                file,
+                                "${safeName}.pdf",
+                                "application/pdf"
+                            )
+                            if (uri != null) {
+                                saved++
+                            } else {
+                                shareUris.add(
+                                    FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        file
+                                    )
+                                )
+                            }
+                        }
                     }
                 }
+                Pair(saved, shareUris)
             }
+            val saved = result.first
+            val shareUris = result.second
             if (saved > 0) {
                 Toast.makeText(
                     context,
@@ -120,6 +149,21 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                     },
                     Toast.LENGTH_SHORT
                 ).show()
+            }
+            if (saved == 0 && shareUris.isNotEmpty()) {
+                val intent = if (type == ImportExportType.PDF) {
+                    Intent(Intent.ACTION_SEND).apply {
+                        this.type = "application/pdf"
+                        putExtra(Intent.EXTRA_STREAM, shareUris.first())
+                    }
+                } else {
+                    Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                        this.type = "image/jpeg"
+                        putParcelableArrayListExtra(Intent.EXTRA_STREAM, shareUris)
+                    }
+                }
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                context.startActivity(Intent.createChooser(intent, "Share export"))
             }
         }
     }
@@ -137,6 +181,21 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                     importExportType = null
                     exportImported(doc, exportType)
                 }
+            }
+        }
+    }
+
+    fun editPage(documentId: String, pageId: String) {
+        scope.launch {
+            val page = viewModel.document(documentId)?.pages?.firstOrNull { it.id == pageId }
+                ?: return@launch
+            val path = page.originalImagePath ?: page.imagePath
+            val bitmap = withContext(Dispatchers.IO) {
+                ImageProcessor.decodeFile(path)
+            }
+            if (bitmap != null) {
+                viewModel.startEditingPage(documentId, pageId, bitmap, page.filterName)
+                screen = Screen.Crop
             }
         }
     }
@@ -210,10 +269,36 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             onClose = { goBack() },
             onCaptured = { paths ->
                 scope.launch {
+                    var truncated = false
                     val bitmaps = withContext(Dispatchers.IO) {
-                        paths.mapNotNull { ImageProcessor.decodeFile(it) }
+                        val loaded = ArrayList<Bitmap>()
+                        var totalBytes = 0L
+                        val budget = 384L * 1024 * 1024
+                        try {
+                            for (path in paths) {
+                                val bitmap = ImageProcessor.decodeFile(path) ?: continue
+                                val bytes = bitmap.allocationByteCount.toLong()
+                                if (loaded.isNotEmpty() && totalBytes + bytes > budget) {
+                                    bitmap.recycle()
+                                    truncated = true
+                                    break
+                                }
+                                loaded.add(bitmap)
+                                totalBytes += bytes
+                            }
+                        } finally {
+                            paths.forEach { File(it).delete() }
+                        }
+                        loaded
                     }
                     if (bitmaps.isNotEmpty()) {
+                        if (truncated) {
+                            Toast.makeText(
+                                context,
+                                "Imported first ${bitmaps.size} captures",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                         viewModel.startImport(bitmaps)
                         screen = Screen.Crop
                     } else {
@@ -231,14 +316,17 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
         Screen.Crop -> {
             val bitmap = viewModel.pendingBitmap
             if (bitmap == null) {
-                screen = Screen.Home
+                LaunchedEffect(Unit) { screen = Screen.Home }
             } else {
                 CropScreen(
                     bitmap = bitmap,
                     onBack = { goBack() },
                     onDone = { cropped ->
                         viewModel.pendingBitmap = cropped
-                        viewModel.selectedFilter = com.repdoc.scanner.util.DocumentFilter.MAGIC_COLOR
+                        if (viewModel.editingPageId == null) {
+                            viewModel.selectedFilter =
+                                com.repdoc.scanner.util.DocumentFilter.MAGIC_COLOR
+                        }
                         if (viewModel.autoSave) {
                             saveCurrent(cropped)
                         } else {
@@ -252,7 +340,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
         Screen.Filter -> {
             val bitmap = viewModel.pendingBitmap
             if (bitmap == null) {
-                screen = Screen.Home
+                LaunchedEffect(Unit) { screen = Screen.Home }
             } else {
                 FilterScreen(
                     bitmap = bitmap,
@@ -278,12 +366,35 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             onBack = { screen = currentDocumentScreen(viewModel) },
             onImport = { uris: List<Uri> ->
                 scope.launch {
+                    var truncated = false
                     val bitmaps = withContext(Dispatchers.IO) {
-                        uris.mapNotNull { uri -> ImageProcessor.decodeBitmap(context, uri, 2400) }
+                        val loaded = ArrayList<Bitmap>()
+                        var totalBytes = 0L
+                        val budget = 384L * 1024 * 1024
+                        for (uri in uris) {
+                            val bitmap = ImageProcessor.decodeBitmap(context, uri, 2400)
+                                ?: continue
+                            val bytes = bitmap.allocationByteCount.toLong()
+                            if (loaded.isNotEmpty() && totalBytes + bytes > budget) {
+                                bitmap.recycle()
+                                truncated = true
+                                break
+                            }
+                            loaded.add(bitmap)
+                            totalBytes += bytes
+                        }
+                        loaded
                     }
                     if (bitmaps.isEmpty()) {
                         Toast.makeText(context, "Could not read selected images", Toast.LENGTH_SHORT).show()
                     } else {
+                        if (truncated) {
+                            Toast.makeText(
+                                context,
+                                "Imported first ${bitmaps.size} images",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                         importExportType = ImportExportType.IMAGE
                         viewModel.startImport(bitmaps)
                         screen = Screen.Crop
@@ -318,20 +429,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                 pdfLauncher.launch(arrayOf("application/pdf"))
             },
             onOpenPage = { pageId -> screen = Screen.PageViewer(current.id, pageId) },
-            onEditPage = { pageId ->
-                scope.launch {
-                    val page = viewModel.document(current.id)?.pages?.firstOrNull { it.id == pageId }
-                        ?: return@launch
-                    val path = page.originalImagePath ?: page.imagePath
-                    val bitmap = withContext(Dispatchers.IO) {
-                        ImageProcessor.decodeFile(path)
-                    }
-                    if (bitmap != null) {
-                        viewModel.startEditingPage(current.id, pageId, bitmap)
-                        screen = Screen.Crop
-                    }
-                }
-            },
+            onEditPage = { pageId -> editPage(current.id, pageId) },
             onDeleted = { screen = Screen.Home }
         )
 
@@ -351,10 +449,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             viewModel = viewModel,
             onBack = { screen = Screen.Document(current.documentId) },
             autoRun = current.autoRun,
-            onEdit = { bitmap ->
-                viewModel.startEditingPage(current.documentId, current.pageId, bitmap)
-                screen = Screen.Crop
-            }
+            onEdit = { _ -> editPage(current.documentId, current.pageId) }
         )
     }
 }

@@ -16,6 +16,7 @@ import com.repdoc.scanner.util.DocumentFilter
 import com.repdoc.scanner.util.ImageProcessor
 import com.repdoc.scanner.util.NativeFilters
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -41,7 +42,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var busy by mutableStateOf(false)
 
     init {
-        NativeFilters.initialize(application)
+        viewModelScope.launch(Dispatchers.Default) {
+            NativeFilters.initialize(application)
+        }
+        viewModelScope.launch {
+            repository.reloadFolders()
+            repository.reload()
+        }
     }
 
     fun document(id: String): Document? = repository.document(id)
@@ -55,9 +62,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             .apply()
     }
 
-    fun reload() = repository.reload()
+    fun reload() {
+        viewModelScope.launch { repository.reload() }
+    }
 
-    fun createDocument(): Document {
+    suspend fun createDocument(): Document {
         val doc = repository.createDocument()
         activeDocumentId = doc.id
         return doc
@@ -66,34 +75,55 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun savePage(bitmap: Bitmap, filter: DocumentFilter, onSaved: (Document) -> Unit) {
         viewModelScope.launch {
             busy = true
-            val filtered = withContext(Dispatchers.Default) {
-                NativeFilters.apply(bitmap, filter)
-            }
-            val editDocumentId = editingDocumentId
-            val editPageId = editingPageId
-            val updated = if (editDocumentId != null && editPageId != null) {
-                repository.replacePageImage(editDocumentId, editPageId, filtered, original = bitmap)
-            } else {
-                val id = activeDocumentId ?: createDocument().id
-                repository.addPage(id, filtered, original = bitmap)
-            }
-            editingDocumentId = null
-            editingPageId = null
-            busy = false
-            if (updated != null) {
-                onSaved(updated)
+            try {
+                val filtered = withContext(Dispatchers.Default) {
+                    NativeFilters.apply(bitmap, filter)
+                }
+                val editDocumentId = editingDocumentId
+                val editPageId = editingPageId
+                val updated = if (editDocumentId != null && editPageId != null) {
+                    repository.replacePageImage(
+                        editDocumentId,
+                        editPageId,
+                        filtered,
+                        original = bitmap,
+                        filterName = filter.name,
+                        updateFilter = true
+                    )
+                } else {
+                    val id = activeDocumentId ?: createDocument().id
+                    repository.addPage(
+                        id,
+                        filtered,
+                        original = bitmap,
+                        filterName = filter.name
+                    )
+                }
+                editingDocumentId = null
+                editingPageId = null
+                if (updated != null) {
+                    onSaved(updated)
+                }
+            } finally {
+                busy = false
             }
         }
     }
 
-    fun startEditingPage(documentId: String, pageId: String, bitmap: Bitmap) {
+    fun startEditingPage(
+        documentId: String,
+        pageId: String,
+        bitmap: Bitmap,
+        filterName: String? = null
+    ) {
         activeDocumentId = documentId
         editingDocumentId = documentId
         editingPageId = pageId
         pendingBitmap = bitmap
         pendingBitmaps = emptyList()
         pendingIndex = 0
-        selectedFilter = DocumentFilter.MAGIC_COLOR
+        selectedFilter = DocumentFilter.entries.firstOrNull { it.name == filterName }
+            ?: DocumentFilter.ORIGINAL
     }
 
     fun startImport(bitmaps: List<Bitmap>) {
@@ -133,90 +163,140 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun rename(id: String, name: String) {
-        repository.renameDocument(id, name)
+        viewModelScope.launch { repository.renameDocument(id, name) }
     }
 
     fun delete(id: String) {
-        repository.deleteDocument(id)
         if (activeDocumentId == id) activeDocumentId = null
+        viewModelScope.launch { repository.deleteDocument(id) }
     }
 
-    fun updateOcr(id: String, pageId: String, text: String) {
-        repository.updatePageOcr(id, pageId, text)
-    }
+    fun updateOcr(id: String, pageId: String, text: String): Job =
+        viewModelScope.launch { repository.updatePageOcr(id, pageId, text) }
 
     fun deletePage(documentId: String, pageId: String) {
-        repository.deletePage(documentId, pageId)
+        viewModelScope.launch { repository.deletePage(documentId, pageId) }
     }
 
     fun movePage(documentId: String, pageId: String, toIndex: Int) {
-        repository.movePage(documentId, pageId, toIndex)
+        viewModelScope.launch { repository.movePage(documentId, pageId, toIndex) }
     }
 
     fun duplicatePage(documentId: String, pageId: String) {
-        repository.duplicatePage(documentId, pageId)
+        viewModelScope.launch { repository.duplicatePage(documentId, pageId) }
     }
 
     fun applyFilterToPage(documentId: String, pageId: String, filter: DocumentFilter) {
         viewModelScope.launch {
             busy = true
-            val page = repository.document(documentId)?.pages?.firstOrNull { it.id == pageId }
-            if (page != null) {
-                val basePath = page.originalImagePath?.takeIf { File(it).isFile } ?: page.imagePath
-                val bitmap = withContext(Dispatchers.IO) {
-                    ImageProcessor.decodeFile(basePath)
-                }
-                if (bitmap != null) {
-                    val filtered = withContext(Dispatchers.Default) {
-                        NativeFilters.apply(bitmap, filter)
+            try {
+                val page = repository.document(documentId)?.pages?.firstOrNull { it.id == pageId }
+                if (page != null) {
+                    val basePath = page.originalImagePath?.takeIf { File(it).isFile } ?: page.imagePath
+                    val bitmap = withContext(Dispatchers.IO) {
+                        ImageProcessor.decodeFile(basePath)
                     }
-                    repository.replacePageImage(
-                        documentId,
-                        pageId,
-                        filtered,
-                        updateOriginal = false
-                    )
+                    if (bitmap != null) {
+                        val filtered = withContext(Dispatchers.Default) {
+                            NativeFilters.apply(bitmap, filter)
+                        }
+                        repository.replacePageImage(
+                            documentId,
+                            pageId,
+                            filtered,
+                            updateOriginal = false,
+                            filterName = filter.name,
+                            updateFilter = true
+                        )
+                    }
                 }
+            } finally {
+                busy = false
             }
-            busy = false
         }
     }
 
-    fun replacePageImage(documentId: String, pageId: String, bitmap: Bitmap) {
+    fun replacePageImage(
+        documentId: String,
+        pageId: String,
+        bitmap: Bitmap,
+        filter: DocumentFilter = DocumentFilter.ORIGINAL
+    ) {
         viewModelScope.launch {
             busy = true
-            repository.replacePageImage(documentId, pageId, bitmap)
-            busy = false
+            try {
+                val output = if (filter == DocumentFilter.ORIGINAL) {
+                    bitmap
+                } else {
+                    withContext(Dispatchers.Default) {
+                        NativeFilters.apply(bitmap, filter)
+                    }
+                }
+                repository.replacePageImage(
+                    documentId,
+                    pageId,
+                    output,
+                    original = bitmap,
+                    filterName = filter.name,
+                    updateFilter = true
+                )
+            } finally {
+                busy = false
+            }
         }
     }
 
     fun rotatePage(documentId: String, pageId: String, degrees: Int = 90) {
         viewModelScope.launch {
             busy = true
-            val page = repository.document(documentId)?.pages?.firstOrNull { it.id == pageId }
-            if (page != null) {
-                val bitmap = withContext(Dispatchers.IO) {
-                    ImageProcessor.decodeFile(page.imagePath)
-                }
-                if (bitmap != null) {
-                    val rotated = withContext(Dispatchers.Default) {
-                        ImageProcessor.rotate(bitmap, degrees)
+            try {
+                val page = repository.document(documentId)?.pages?.firstOrNull { it.id == pageId }
+                if (page != null) {
+                    val bitmap = withContext(Dispatchers.IO) {
+                        ImageProcessor.decodeFile(page.imagePath)
                     }
-                    repository.replacePageImage(documentId, pageId, rotated)
+                    if (bitmap != null) {
+                        val rotated = withContext(Dispatchers.Default) {
+                            ImageProcessor.rotate(bitmap, degrees)
+                        }
+                        val originalPath = page.originalImagePath?.takeIf { File(it).isFile }
+                        val rotatedOriginal = originalPath?.let { path ->
+                            withContext(Dispatchers.IO) { ImageProcessor.decodeFile(path) }
+                                ?.let { original ->
+                                    withContext(Dispatchers.Default) {
+                                        ImageProcessor.rotate(original, degrees)
+                                    }
+                                }
+                        }
+                        repository.replacePageImage(
+                            documentId,
+                            pageId,
+                            rotated,
+                            original = rotatedOriginal,
+                            updateOriginal = originalPath == null || rotatedOriginal != null
+                        )
+                    }
                 }
+            } finally {
+                busy = false
             }
-            busy = false
         }
     }
 
-    fun createFolder(name: String) = repository.createFolder(name)
+    fun createFolder(name: String) {
+        viewModelScope.launch { repository.createFolder(name) }
+    }
 
-    fun renameFolder(folderId: String, name: String) = repository.renameFolder(folderId, name)
+    fun renameFolder(folderId: String, name: String) {
+        viewModelScope.launch { repository.renameFolder(folderId, name) }
+    }
 
-    fun deleteFolder(folderId: String) = repository.deleteFolder(folderId)
+    fun deleteFolder(folderId: String) {
+        viewModelScope.launch { repository.deleteFolder(folderId) }
+    }
 
     fun moveDocumentToFolder(documentId: String, folderId: String?) {
-        repository.moveDocumentToFolder(documentId, folderId)
+        viewModelScope.launch { repository.moveDocumentToFolder(documentId, folderId) }
     }
 
     fun search(query: String, folderId: String? = null): List<SearchHit> =

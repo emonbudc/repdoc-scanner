@@ -291,17 +291,27 @@ fun IdCardScreen(
                         if (f != null && b != null) {
                             busy = true
                             scope.launch {
-                                val combined = withContext(Dispatchers.Default) {
-                                    val filteredFront = ImageProcessor.cleanCardImage(
-                                        NativeFilters.apply(f, selectedFilter)
-                                    )
-                                    val filteredBack = ImageProcessor.cleanCardImage(
-                                        NativeFilters.apply(b, selectedFilter)
-                                    )
-                                    combineIdCard(filteredFront, filteredBack)
-                                }
+                                val combined = runCatching {
+                                    withContext(Dispatchers.Default) {
+                                        val filteredFront = ImageProcessor.cleanCardImage(
+                                            NativeFilters.apply(f, selectedFilter)
+                                        )
+                                        val filteredBack = ImageProcessor.cleanCardImage(
+                                            NativeFilters.apply(b, selectedFilter)
+                                        )
+                                        combineIdCard(filteredFront, filteredBack)
+                                    }
+                                }.getOrNull()
                                 busy = false
-                                onCreate(combined)
+                                if (combined != null) {
+                                    onCreate(combined)
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "Could not create ID card",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             }
                         }
                     },

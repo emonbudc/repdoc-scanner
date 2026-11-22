@@ -25,9 +25,11 @@ object ExportUtils {
         }
         val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
         return runCatching {
-            resolver.openOutputStream(uri)?.use { output ->
-                file.inputStream().use { input -> input.copyTo(output) }
-            } ?: return null
+            val output = resolver.openOutputStream(uri)
+                ?: error("Could not open output stream")
+            output.use { stream ->
+                file.inputStream().use { input -> input.copyTo(stream) }
+            }
             val done = ContentValues().apply {
                 put(MediaStore.Downloads.IS_PENDING, 0)
             }

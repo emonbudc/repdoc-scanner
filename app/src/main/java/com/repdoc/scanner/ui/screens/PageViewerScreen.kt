@@ -87,7 +87,13 @@ fun PageViewerScreen(
     val scope = rememberCoroutineScope()
     var cropSource by remember(pageId) { mutableStateOf<Bitmap?>(null) }
     var loading by remember(pageId) { mutableStateOf(false) }
-    var appliedFilter by remember(pageId) { mutableStateOf<DocumentFilter?>(null) }
+    var appliedFilter by remember(pageId, page?.filterName) {
+        mutableStateOf(
+            page?.filterName
+                ?.let { name -> DocumentFilter.entries.firstOrNull { it.name == name } }
+                ?: DocumentFilter.ORIGINAL
+        )
+    }
     var sizeText by remember(pageId) { mutableStateOf("") }
 
     LaunchedEffect(page?.imagePath) {
@@ -113,8 +119,9 @@ fun PageViewerScreen(
         if (loading) return
         loading = true
         scope.launch {
+            val source = page.originalImagePath?.takeIf { File(it).isFile } ?: page.imagePath
             val bitmap = withContext(Dispatchers.IO) {
-                ImageProcessor.decodeFile(page.imagePath, 2800)
+                ImageProcessor.decodeFile(source, 2800)
             }
             loading = false
             if (bitmap != null) {
@@ -129,7 +136,7 @@ fun PageViewerScreen(
             bitmap = pendingCrop,
             onBack = { cropSource = null },
             onDone = { cropped ->
-                viewModel.replacePageImage(document.id, page.id, cropped)
+                viewModel.replacePageImage(document.id, page.id, cropped, appliedFilter)
                 cropSource = null
             }
         )

@@ -4,6 +4,20 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val releaseStorePath = System.getenv("RELEASE_STORE_FILE")?.takeIf { it.isNotBlank() }
+val releaseStore = releaseStorePath?.let { rootProject.file(it) }
+val requireReleaseSigning = System.getenv("REQUIRE_RELEASE_SIGNING") == "true"
+val nativeLicenseKey = providers.gradleProperty("nativeLicenseKey")
+    .orElse("79421895ae6636767d7300455003-PnzFpnaare")
+    .get()
+
+if (releaseStorePath != null && releaseStore?.isFile != true) {
+    throw GradleException("RELEASE_STORE_FILE points to a missing file: $releaseStorePath")
+}
+if (requireReleaseSigning && releaseStore?.isFile != true) {
+    throw GradleException("Release signing is required but RELEASE_STORE_FILE is missing or invalid")
+}
+
 android {
     namespace = "com.repdoc.scanner"
     compileSdk = 35
@@ -15,12 +29,13 @@ android {
         versionCode = 2
         versionName = "1.1"
 
+        buildConfigField("String", "NATIVE_LICENSE_KEY", "\"$nativeLicenseKey\"")
+
         ndk {
             abiFilters += "arm64-v8a"
         }
     }
 
-    val releaseStore = System.getenv("RELEASE_STORE_FILE")?.let { file(it) }
     signingConfigs {
         if (releaseStore?.isFile == true) {
             create("release") {
@@ -57,6 +72,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -79,7 +95,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    implementation("androidx.navigation:navigation-compose:2.8.5")
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")

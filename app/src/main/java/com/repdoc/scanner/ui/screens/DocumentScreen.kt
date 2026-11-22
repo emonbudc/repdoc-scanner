@@ -164,16 +164,34 @@ fun DocumentScreen(
                 return@launch
             }
             val safeName = document.name.replace(Regex("[^A-Za-z0-9._ -]"), "_").ifBlank { "Document" }
-            val uris = ArrayList(files.mapIndexed { index, file ->
-                ExportUtils.saveToDownloads(
+            var savedCount = 0
+            val savedUris = withContext(Dispatchers.IO) {
+                files.mapIndexed { index, file ->
+                    val saved = ExportUtils.saveToDownloads(
+                        context,
+                        file,
+                        "${safeName}_page_${index + 1}.jpg",
+                        "image/jpeg"
+                    )
+                    if (saved != null) {
+                        savedCount++
+                        saved
+                    } else {
+                        FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            file
+                        )
+                    }
+                }
+            }
+            val uris = ArrayList(savedUris)
+            if (savedCount > 0) {
+                Toast.makeText(
                     context,
-                    file,
-                    "${safeName}_page_${index + 1}.jpg",
-                    "image/jpeg"
-                ) ?: FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-            })
-            if (uris.isNotEmpty()) {
-                Toast.makeText(context, "Saved ${uris.size} images to Downloads", Toast.LENGTH_SHORT).show()
+                    "Saved $savedCount image${if (savedCount == 1) "" else "s"} to Downloads",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
             val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
                 type = "image/jpeg"
@@ -194,7 +212,7 @@ fun DocumentScreen(
                 } ?: continue
                 val text = runCatching { OcrEngine.recognize(context, bitmap) }.getOrDefault("")
                 if (text.isNotBlank()) {
-                    viewModel.updateOcr(document.id, page.id, text)
+                    viewModel.updateOcr(document.id, page.id, text).join()
                 }
             }
             ocrBusy = false

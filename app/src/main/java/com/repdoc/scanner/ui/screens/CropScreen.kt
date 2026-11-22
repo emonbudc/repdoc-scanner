@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.repdoc.scanner.util.AutoCrop
 import com.repdoc.scanner.util.ImageProcessor
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -69,8 +71,10 @@ fun CropScreen(
     var detecting by remember(bitmap) { mutableStateOf(true) }
     var fullPage by remember(bitmap) { mutableStateOf(false) }
     var autoRequest by remember(bitmap) { mutableIntStateOf(0) }
+    var processing by remember(bitmap) { mutableStateOf(false) }
     val density = LocalDensity.current
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val handleRadiusPx = with(density) { 34.dp.toPx() }
 
     LaunchedEffect(bitmap, autoRequest) {
@@ -96,7 +100,25 @@ fun CropScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = { onDone(if (fullPage) bitmap else AutoCrop.crop(bitmap, corners)) }) {
+                    TextButton(
+                        enabled = !detecting && !processing,
+                        onClick = {
+                            if (fullPage) {
+                                onDone(bitmap)
+                            } else {
+                                processing = true
+                                scope.launch {
+                                    val cropped = runCatching {
+                                        withContext(Dispatchers.Default) {
+                                            AutoCrop.crop(bitmap, corners)
+                                        }
+                                    }.getOrNull()
+                                    processing = false
+                                    if (cropped != null) onDone(cropped)
+                                }
+                            }
+                        }
+                    ) {
                         Text("Done", color = Color(0xFF00B796))
                     }
                 },
@@ -120,11 +142,12 @@ fun CropScreen(
                 ) {
                     TextButton(
                         onClick = { autoRequest++ },
-                        enabled = !detecting
+                        enabled = !detecting && !processing
                     ) {
                         Text("Auto", color = Color(0xFF00B796))
                     }
                     TextButton(
+                        enabled = !detecting && !processing,
                         onClick = {
                             corners = ImageProcessor.fullCorners(bitmap)
                             fullPage = true
@@ -133,6 +156,7 @@ fun CropScreen(
                         Text("Full page", color = MaterialTheme.colorScheme.onSurface)
                     }
                     TextButton(
+                        enabled = !detecting && !processing,
                         onClick = {
                             corners = ImageProcessor.defaultCorners(bitmap)
                             fullPage = false
@@ -231,7 +255,7 @@ fun CropScreen(
                     }
                 }
             }
-            if (detecting) {
+            if (detecting || processing) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -239,7 +263,10 @@ fun CropScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = Color(0xFF00B796))
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text("Detecting edges", color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            if (processing) "Cropping" else "Detecting edges",
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
             }

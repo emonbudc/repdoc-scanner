@@ -4,7 +4,8 @@ data class Page(
     val id: String,
     val imagePath: String,
     val ocrText: String? = null,
-    val originalImagePath: String? = null
+    val originalImagePath: String? = null,
+    val filterName: String? = null
 )
 
 data class Folder(

@@ -1,6 +1,7 @@
 package com.repdoc.scanner.util
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Paint
 import android.graphics.RectF
@@ -21,21 +22,25 @@ object PdfExporter {
         val pdf = PdfDocument()
         try {
             document.pages.forEachIndexed { index, page ->
-                val bitmap = BitmapFactory.decodeFile(page.imagePath) ?: return@forEachIndexed
-                val pageWidth = if (bitmap.width >= bitmap.height) LANDSCAPE_WIDTH else PORTRAIT_WIDTH
-                val pageHeight = (pageWidth.toFloat() * bitmap.height / bitmap.width)
-                    .toInt()
-                    .coerceAtLeast(1)
-                val info = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, index + 1).create()
-                val pdfPage = pdf.startPage(info)
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-                pdfPage.canvas.drawBitmap(
-                    bitmap,
-                    null,
-                    RectF(0f, 0f, pageWidth.toFloat(), pageHeight.toFloat()),
-                    paint
-                )
-                pdf.finishPage(pdfPage)
+                val bitmap = decodePage(page.imagePath) ?: return@forEachIndexed
+                try {
+                    val pageWidth = if (bitmap.width >= bitmap.height) LANDSCAPE_WIDTH else PORTRAIT_WIDTH
+                    val pageHeight = (pageWidth.toFloat() * bitmap.height / bitmap.width)
+                        .toInt()
+                        .coerceAtLeast(1)
+                    val info = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, index + 1).create()
+                    val pdfPage = pdf.startPage(info)
+                    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+                    pdfPage.canvas.drawBitmap(
+                        bitmap,
+                        null,
+                        RectF(0f, 0f, pageWidth.toFloat(), pageHeight.toFloat()),
+                        paint
+                    )
+                    pdf.finishPage(pdfPage)
+                } finally {
+                    bitmap.recycle()
+                }
             }
             output.outputStream().use { pdf.writeTo(it) }
             return output
@@ -45,5 +50,24 @@ object PdfExporter {
         } finally {
             pdf.close()
         }
+    }
+
+    private fun decodePage(path: String): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, 2200)
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        return BitmapFactory.decodeFile(path, options)
+    }
+
+    private fun sampleSize(width: Int, height: Int, maxDimension: Int): Int {
+        var sample = 1
+        while (width / sample > maxDimension || height / sample > maxDimension) {
+            sample *= 2
+        }
+        return sample
     }
 }
