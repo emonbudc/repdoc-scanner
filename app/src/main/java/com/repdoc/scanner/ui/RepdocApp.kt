@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.repdoc.scanner.AppViewModel
+import com.repdoc.scanner.data.Document
 import com.repdoc.scanner.ui.screens.CameraScreen
 import com.repdoc.scanner.ui.screens.CropScreen
 import com.repdoc.scanner.ui.screens.DocumentScreen
@@ -25,11 +26,16 @@ import com.repdoc.scanner.ui.screens.OcrScreen
 import com.repdoc.scanner.ui.screens.PageViewerScreen
 import com.repdoc.scanner.ui.screens.PdfToolType
 import com.repdoc.scanner.ui.screens.PdfToolsScreen
+import com.repdoc.scanner.util.ExportUtils
+import com.repdoc.scanner.util.ImageExporter
 import com.repdoc.scanner.util.ImageProcessor
+import com.repdoc.scanner.util.PdfExporter
 import com.repdoc.scanner.util.PdfImporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private enum class ImportExportType { IMAGE, PDF }
 
 sealed interface Screen {
     data object Home : Screen
@@ -49,6 +55,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
     val documents by viewModel.documents.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
+    var importExportType by remember { mutableStateOf<ImportExportType?>(null) }
     val scope = rememberCoroutineScope()
 
     fun goBack() {
@@ -68,6 +75,51 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
         }
     }
 
+    fun exportImported(document: Document, type: ImportExportType) {
+        scope.launch {
+            val safeName = document.name.replace(Regex("[^A-Za-z0-9._ -]"), "_").ifBlank { "Document" }
+            val saved = withContext(Dispatchers.IO) {
+                when (type) {
+                    ImportExportType.IMAGE -> {
+                        val files = ImageExporter.export(context, document)
+                        var count = 0
+                        files.forEachIndexed { index, file ->
+                            val uri = ExportUtils.saveToDownloads(
+                                context,
+                                file,
+                                "${safeName}_page_${index + 1}.jpg",
+                                "image/jpeg"
+                            )
+                            if (uri != null) count++
+                        }
+                        count
+                    }
+                    ImportExportType.PDF -> {
+                        val file = PdfExporter.export(context, document) ?: return@withContext 0
+                        val uri = ExportUtils.saveToDownloads(
+                            context,
+                            file,
+                            "${safeName}.pdf",
+                            "application/pdf"
+                        )
+                        if (uri != null) 1 else 0
+                    }
+                }
+            }
+            if (saved > 0) {
+                Toast.makeText(
+                    context,
+                    if (type == ImportExportType.PDF) {
+                        "Edited PDF saved to Downloads"
+                    } else {
+                        "Edited image${if (saved == 1) "" else "s"} saved to Downloads"
+                    },
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
     fun saveCurrent(bitmap: Bitmap) {
         viewModel.savePage(bitmap, viewModel.selectedFilter) { doc ->
             val next = viewModel.advancePending()
@@ -76,6 +128,11 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             } else {
                 viewModel.resetPending()
                 screen = Screen.Document(doc.id)
+                val exportType = importExportType
+                if (exportType != null) {
+                    importExportType = null
+                    exportImported(doc, exportType)
+                }
             }
         }
     }
@@ -85,6 +142,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             scope.launch {
                 val bitmap = withContext(Dispatchers.IO) { ImageProcessor.decodeBitmap(context, uri) }
                 if (bitmap != null) {
+                    importExportType = ImportExportType.IMAGE
                     viewModel.startImport(listOf(bitmap))
                     screen = Screen.Crop
                 } else {
@@ -101,6 +159,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                 if (bitmaps.isEmpty()) {
                     Toast.makeText(context, "Could not read PDF", Toast.LENGTH_SHORT).show()
                 } else {
+                    importExportType = ImportExportType.PDF
                     viewModel.startImport(bitmaps)
                     screen = Screen.Crop
                 }
@@ -109,12 +168,14 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
     }
 
     fun importImage() {
+        importExportType = null
         viewModel.beginNewPage()
         viewModel.activeDocumentId = null
         importLauncher.launch("image/*")
     }
 
     fun importPdf() {
+        importExportType = null
         viewModel.beginNewPage()
         viewModel.activeDocumentId = null
         pdfLauncher.launch(arrayOf("application/pdf"))
