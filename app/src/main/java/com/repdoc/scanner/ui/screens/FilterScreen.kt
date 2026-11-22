@@ -29,6 +29,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -65,6 +66,7 @@ fun FilterScreen(
 ) {
     var preview by remember { mutableStateOf<Bitmap?>(null) }
     var loading by remember { mutableStateOf(true) }
+    var showOriginal by remember(bitmap) { mutableStateOf(false) }
 
     LaunchedEffect(bitmap, selectedFilter) {
         loading = true
@@ -85,6 +87,12 @@ fun FilterScreen(
                     }
                 },
                 actions = {
+                    TextButton(onClick = { showOriginal = !showOriginal }) {
+                        Text(
+                            if (showOriginal) "After" else "Before",
+                            color = Color.White
+                        )
+                    }
                     IconButton(onClick = onSave, enabled = !busy) {
                         Icon(Icons.Default.Check, contentDescription = "Save page")
                     }
@@ -110,7 +118,7 @@ fun FilterScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
-                val current = preview
+                val current = if (showOriginal) bitmap else preview
                 if (current != null) {
                     Image(
                         bitmap = current.asImageBitmap(),

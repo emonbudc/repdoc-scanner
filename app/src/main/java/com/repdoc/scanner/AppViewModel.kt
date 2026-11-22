@@ -45,7 +45,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun document(id: String): Document? = repository.document(id)
 
-    fun setAutoSave(enabled: Boolean) {
+    fun updateAutoSave(enabled: Boolean) {
         autoSave = enabled
         getApplication<Application>()
             .getSharedPreferences("repdoc_settings", Context.MODE_PRIVATE)

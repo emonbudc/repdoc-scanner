@@ -152,7 +152,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             onMoveDocument = { id, folderId -> viewModel.moveDocumentToFolder(id, folderId) },
             onSearch = { query, folderId -> viewModel.search(query, folderId) },
             autoSave = viewModel.autoSave,
-            onAutoSaveChange = viewModel::setAutoSave
+            onAutoSaveChange = viewModel::updateAutoSave
         )
 
         Screen.Camera -> CameraScreen(
