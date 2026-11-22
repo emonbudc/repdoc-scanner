@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Repdoc Scanner</string>
+    <string name="home">Documents</string>
+    <string name="scan">Scan</string>
+    <string name="import_images">Import</string>
+    <string name="crop">Crop</string>
+    <string name="filter">Filter</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="rename">Rename</string>
+    <string name="export_pdf">Export PDF</string>
+    <string name="share_pdf">Share PDF</string>
+    <string name="run_ocr">Run OCR</string>
+    <string name="copy">Copy</string>
+    <string name="share">Share</string>
+    <string name="empty_docs">No documents yet</string>
+    <string name="empty_docs_hint">Scan a page or import images to begin.</string>
+    <string name="camera_permission">Camera permission is required to scan documents.</string>
+    <string name="grant_permission">Grant permission</string>
+    <string name="capture">Capture</string>
+    <string name="retake">Retake</string>
+    <string name="reset">Reset</string>
+    <string name="add_page">Add page</string>
+    <string name="ocr_all">OCR all</string>
+    <string name="document_name">Document name</string>
+    <string name="delete_document">Delete document?</string>
+    <string name="delete_document_message">This removes the document and its pages from this device.</string>
+    <string name="page">Page</string>
+    <string name="pages">pages</string>
+    <string name="ocr_empty">No text recognized yet.</string>
+    <string name="processing">Processing…</string>
+</resources>

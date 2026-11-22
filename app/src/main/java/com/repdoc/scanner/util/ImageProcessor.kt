@@ -1,0 +1,150 @@
+package com.repdoc.scanner.util
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.PointF
+import android.net.Uri
+import androidx.exifinterface.media.ExifInterface
+import java.io.File
+import java.io.FileOutputStream
+import kotlin.math.hypot
+import kotlin.math.max
+
+object ImageProcessor {
+
+    fun decodeBitmap(context: Context, uri: Uri, maxDimension: Int = 2800): Bitmap? {
+        return runCatching {
+            val resolver = context.contentResolver
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            val sample = sampleSize(bounds.outWidth, bounds.outHeight, maxDimension)
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val bitmap = resolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, options)
+            } ?: return null
+            val orientation = resolver.openInputStream(uri)?.use {
+                ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            } ?: ExifInterface.ORIENTATION_NORMAL
+            applyOrientation(bitmap, orientation)
+        }.getOrNull()
+    }
+
+    fun decodeFile(path: String, maxDimension: Int = 2800): Bitmap? {
+        return runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, bounds)
+            val sample = sampleSize(bounds.outWidth, bounds.outHeight, maxDimension)
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val bitmap = BitmapFactory.decodeFile(path, options) ?: return null
+            val orientation = ExifInterface(path).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+            applyOrientation(bitmap, orientation)
+        }.getOrNull()
+    }
+
+    fun scaled(bitmap: Bitmap, maxDimension: Int): Bitmap {
+        val longest = max(bitmap.width, bitmap.height)
+        if (longest <= maxDimension) return bitmap
+        val scale = maxDimension.toFloat() / longest
+        return Bitmap.createScaledBitmap(
+            bitmap,
+            (bitmap.width * scale).toInt().coerceAtLeast(1),
+            (bitmap.height * scale).toInt().coerceAtLeast(1),
+            true
+        )
+    }
+
+    fun cropPerspective(bitmap: Bitmap, corners: List<PointF>): Bitmap {
+        if (corners.size != 4) return bitmap
+        val top = distance(corners[0], corners[1])
+        val bottom = distance(corners[3], corners[2])
+        val left = distance(corners[0], corners[3])
+        val right = distance(corners[1], corners[2])
+        val outWidth = max(top, bottom).toInt().coerceAtLeast(1)
+        val outHeight = max(left, right).toInt().coerceAtLeast(1)
+        val src = floatArrayOf(
+            corners[0].x, corners[0].y,
+            corners[1].x, corners[1].y,
+            corners[2].x, corners[2].y,
+            corners[3].x, corners[3].y
+        )
+        val dst = floatArrayOf(
+            0f, 0f,
+            outWidth.toFloat(), 0f,
+            outWidth.toFloat(), outHeight.toFloat(),
+            0f, outHeight.toFloat()
+        )
+        val matrix = Matrix()
+        if (!matrix.setPolyToPoly(src, 0, dst, 0, 4)) return bitmap
+        val out = Bitmap.createBitmap(outWidth, outHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        canvas.drawBitmap(bitmap, matrix, paint)
+        return out
+    }
+
+    fun defaultCorners(bitmap: Bitmap): List<PointF> {
+        val insetX = bitmap.width * 0.04f
+        val insetY = bitmap.height * 0.04f
+        return listOf(
+            PointF(insetX, insetY),
+            PointF(bitmap.width - insetX, insetY),
+            PointF(bitmap.width - insetX, bitmap.height - insetY),
+            PointF(insetX, bitmap.height - insetY)
+        )
+    }
+
+    fun saveJpeg(bitmap: Bitmap, file: File, quality: Int = 94): Boolean {
+        return runCatching {
+            file.parentFile?.mkdirs()
+            FileOutputStream(file).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
+            }
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun sampleSize(width: Int, height: Int, maxDimension: Int): Int {
+        if (width <= 0 || height <= 0) return 1
+        var sample = 1
+        while (width / sample > maxDimension || height / sample > maxDimension) {
+            sample *= 2
+        }
+        return sample
+    }
+
+    private fun distance(a: PointF, b: PointF): Float = hypot(a.x - b.x, a.y - b.y)
+
+    private fun applyOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.postRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.postRotate(270f)
+                matrix.postScale(-1f, 1f)
+            }
+            else -> return bitmap
+        }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+}
