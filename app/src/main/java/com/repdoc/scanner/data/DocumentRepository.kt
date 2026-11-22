@@ -65,6 +65,29 @@ class DocumentRepository(context: Context) {
     }
 
     @Synchronized
+    fun replacePageImage(documentId: String, pageId: String, bitmap: Bitmap): Document? {
+        val dir = File(root, documentId)
+        val current = readDocument(dir) ?: return null
+        val oldPage = current.pages.firstOrNull { it.id == pageId } ?: return null
+        val imageFile = File(dir, "page_${pageId}_${System.currentTimeMillis()}.jpg")
+        FileOutputStream(imageFile).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+        }
+        val updated = current.copy(
+            pages = current.pages.map { page ->
+                if (page.id == pageId) page.copy(imagePath = imageFile.absolutePath) else page
+            },
+            updatedAt = System.currentTimeMillis()
+        )
+        writeDocument(dir, updated)
+        reload()
+        if (oldPage.imagePath != imageFile.absolutePath) {
+            runCatching { File(oldPage.imagePath).delete() }
+        }
+        return updated
+    }
+
+    @Synchronized
     fun updatePageOcr(documentId: String, pageId: String, text: String): Document? {
         val dir = File(root, documentId)
         val current = readDocument(dir) ?: return null

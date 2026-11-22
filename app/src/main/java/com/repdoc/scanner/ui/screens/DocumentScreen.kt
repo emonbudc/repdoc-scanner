@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PictureAsPdf
@@ -91,6 +92,7 @@ fun DocumentScreen(
     onAddPage: () -> Unit,
     onImportPage: () -> Unit,
     onOpenPage: (String) -> Unit,
+    onEditPage: (String) -> Unit,
     onDeleted: () -> Unit
 ) {
     val documents by viewModel.documents.collectAsStateWithLifecycle()
@@ -298,7 +300,8 @@ fun DocumentScreen(
                         PageTile(
                             index = index,
                             page = page,
-                            onClick = { onOpenPage(page.id) }
+                            onClick = { onOpenPage(page.id) },
+                            onEdit = { onEditPage(page.id) }
                         )
                     }
                 }
@@ -375,7 +378,7 @@ fun DocumentScreen(
 }
 
 @Composable
-private fun PageTile(index: Int, page: Page, onClick: () -> Unit) {
+private fun PageTile(index: Int, page: Page, onClick: () -> Unit, onEdit: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -395,6 +398,23 @@ private fun PageTile(index: Int, page: Page, onClick: () -> Unit) {
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(6.dp)
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .clickable(onClick = onEdit),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Outlined.Edit,
+                    contentDescription = "Edit page",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)

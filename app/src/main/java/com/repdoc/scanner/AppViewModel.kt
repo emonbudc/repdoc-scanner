@@ -24,6 +24,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var pendingBitmap by mutableStateOf<Bitmap?>(null)
     var activeDocumentId by mutableStateOf<String?>(null)
     var selectedFilter by mutableStateOf(DocumentFilter.ORIGINAL)
+    var editingDocumentId by mutableStateOf<String?>(null)
+    var editingPageId by mutableStateOf<String?>(null)
     var busy by mutableStateOf(false)
 
     init {
@@ -46,13 +48,36 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val filtered = withContext(Dispatchers.Default) {
                 NativeFilters.apply(bitmap, filter)
             }
-            val id = activeDocumentId ?: createDocument().id
-            val updated = repository.addPage(id, filtered)
+            val editDocumentId = editingDocumentId
+            val editPageId = editingPageId
+            val updated = if (editDocumentId != null && editPageId != null) {
+                repository.replacePageImage(editDocumentId, editPageId, filtered)
+            } else {
+                val id = activeDocumentId ?: createDocument().id
+                repository.addPage(id, filtered)
+            }
+            editingDocumentId = null
+            editingPageId = null
             busy = false
             if (updated != null) {
                 onSaved(updated)
             }
         }
+    }
+
+    fun startEditingPage(documentId: String, pageId: String, bitmap: Bitmap) {
+        activeDocumentId = documentId
+        editingDocumentId = documentId
+        editingPageId = pageId
+        pendingBitmap = bitmap
+        selectedFilter = DocumentFilter.ORIGINAL
+    }
+
+    fun beginNewPage() {
+        pendingBitmap = null
+        selectedFilter = DocumentFilter.ORIGINAL
+        editingDocumentId = null
+        editingPageId = null
     }
 
     fun addImportedPage(bitmap: Bitmap, filter: DocumentFilter, onSaved: (Document) -> Unit) {
@@ -75,5 +100,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun resetPending() {
         pendingBitmap = null
         selectedFilter = DocumentFilter.ORIGINAL
+        editingDocumentId = null
+        editingPageId = null
     }
 }

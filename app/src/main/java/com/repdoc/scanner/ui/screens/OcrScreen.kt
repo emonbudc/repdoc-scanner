@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -51,7 +52,8 @@ fun OcrScreen(
     documentId: String,
     pageId: String,
     viewModel: AppViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onEdit: (android.graphics.Bitmap) -> Unit
 ) {
     val documents by viewModel.documents.collectAsStateWithLifecycle()
     val document = documents.firstOrNull { it.id == documentId }
@@ -87,6 +89,12 @@ fun OcrScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { bitmap?.let(onEdit) },
+                        enabled = bitmap != null
+                    ) {
+                        Icon(Icons.Outlined.Edit, contentDescription = "Edit page")
+                    }
                     IconButton(
                         onClick = { clipboard.setText(AnnotatedString(text)) },
                         enabled = text.isNotBlank()

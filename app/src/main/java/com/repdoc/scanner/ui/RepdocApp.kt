@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -19,6 +20,9 @@ import com.repdoc.scanner.ui.screens.FilterScreen
 import com.repdoc.scanner.ui.screens.HomeScreen
 import com.repdoc.scanner.ui.screens.OcrScreen
 import com.repdoc.scanner.util.ImageProcessor
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface Screen {
     data object Home : Screen
@@ -34,6 +38,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
     val context = LocalContext.current
     val documents by viewModel.documents.collectAsStateWithLifecycle()
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
+    val scope = rememberCoroutineScope()
 
     fun goBack() {
         screen = when (val current = screen) {
@@ -70,10 +75,12 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                 screen = Screen.Document(id)
             },
             onScan = {
+                viewModel.beginNewPage()
                 viewModel.activeDocumentId = null
                 screen = Screen.Camera
             },
             onImport = {
+                viewModel.beginNewPage()
                 viewModel.activeDocumentId = null
                 importLauncher.launch("image/*")
             },
@@ -136,14 +143,29 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             viewModel = viewModel,
             onBack = { screen = Screen.Home },
             onAddPage = {
+                viewModel.beginNewPage()
                 viewModel.activeDocumentId = current.id
                 screen = Screen.Camera
             },
             onImportPage = {
+                viewModel.beginNewPage()
                 viewModel.activeDocumentId = current.id
                 importLauncher.launch("image/*")
             },
             onOpenPage = { pageId -> screen = Screen.Ocr(current.id, pageId) },
+            onEditPage = { pageId ->
+                scope.launch {
+                    val page = viewModel.document(current.id)?.pages?.firstOrNull { it.id == pageId }
+                        ?: return@launch
+                    val bitmap = withContext(Dispatchers.IO) {
+                        ImageProcessor.decodeFile(page.imagePath)
+                    }
+                    if (bitmap != null) {
+                        viewModel.startEditingPage(current.id, pageId, bitmap)
+                        screen = Screen.Crop
+                    }
+                }
+            },
             onDeleted = { screen = Screen.Home }
         )
 
@@ -151,7 +173,11 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             documentId = current.documentId,
             pageId = current.pageId,
             viewModel = viewModel,
-            onBack = { screen = Screen.Document(current.documentId) }
+            onBack = { screen = Screen.Document(current.documentId) },
+            onEdit = { bitmap ->
+                viewModel.startEditingPage(current.documentId, current.pageId, bitmap)
+                screen = Screen.Crop
+            }
         )
     }
 }
