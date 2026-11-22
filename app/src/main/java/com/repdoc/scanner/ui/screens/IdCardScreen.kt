@@ -323,7 +323,7 @@ fun IdCardScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.28f)),
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(color = Brand)

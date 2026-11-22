@@ -77,7 +77,7 @@ fun FilterScreen(
     }
 
     Scaffold(
-        containerColor = Color(0xFF111111),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text("Filter") },
@@ -90,7 +90,7 @@ fun FilterScreen(
                     TextButton(onClick = { showOriginal = !showOriginal }) {
                         Text(
                             if (showOriginal) "After" else "Before",
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                     IconButton(onClick = onSave, enabled = !busy) {
@@ -98,10 +98,10 @@ fun FilterScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF1C1C1E),
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White,
-                    actionIconContentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         }
@@ -131,10 +131,10 @@ fun FilterScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.28f)),
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(color = Color.White)
+                        CircularProgressIndicator(color = Color(0xFF00B796))
                     }
                 }
             }
@@ -142,7 +142,7 @@ fun FilterScreen(
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF1C1C1E))
+                    .background(MaterialTheme.colorScheme.surface)
                     .padding(vertical = 10.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -176,7 +176,7 @@ private fun FilterTile(
             modifier = Modifier
                 .size(64.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(if (selected) Color(0xFF00B796).copy(alpha = 0.16f) else Color(0xFF2C2C2E))
+                .background(if (selected) Color(0xFF00B796).copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant)
                 .border(
                     width = if (selected) 2.dp else 0.dp,
                     color = if (selected) Color(0xFF00B796) else Color.Transparent,

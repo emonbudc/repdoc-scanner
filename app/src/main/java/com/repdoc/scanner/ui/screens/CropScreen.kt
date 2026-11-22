@@ -19,6 +19,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -85,7 +86,7 @@ fun CropScreen(
     }
 
     Scaffold(
-        containerColor = Color(0xFF111111),
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = { Text("Adjust crop") },
@@ -100,15 +101,15 @@ fun CropScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF1C1C1E),
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White,
-                    actionIconContentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         },
         bottomBar = {
-            Surface(color = Color(0xFF1C1C1E)) {
+            Surface(color = MaterialTheme.colorScheme.surface) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -129,7 +130,7 @@ fun CropScreen(
                             fullPage = true
                         }
                     ) {
-                        Text("Full page", color = Color.White)
+                        Text("Full page", color = MaterialTheme.colorScheme.onSurface)
                     }
                     TextButton(
                         onClick = {
@@ -137,7 +138,7 @@ fun CropScreen(
                             fullPage = false
                         }
                     ) {
-                        Text("Reset", color = Color.White)
+                        Text("Reset", color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
             }
@@ -238,7 +239,7 @@ fun CropScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = Color(0xFF00B796))
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text("Detecting edges", color = Color.White)
+                        Text("Detecting edges", color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
             }

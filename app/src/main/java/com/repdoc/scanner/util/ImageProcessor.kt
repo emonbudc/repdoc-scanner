@@ -136,6 +136,105 @@ object ImageProcessor {
         return out
     }
 
+    fun trimLightBorder(bitmap: Bitmap, threshold: Int = 245): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        if (width < 8 || height < 8) return bitmap
+        val maxX = (width * 0.25f).toInt().coerceAtLeast(2)
+        val maxY = (height * 0.25f).toInt().coerceAtLeast(2)
+        val stepX = (width / 160).coerceAtLeast(1)
+        val stepY = (height / 160).coerceAtLeast(1)
+
+        fun rowLight(y: Int): Boolean {
+            var light = 0
+            var total = 0
+            var x = 0
+            while (x < width) {
+                val pixel = bitmap.getPixel(x, y)
+                val luma = (Color.red(pixel) * 299 + Color.green(pixel) * 587 + Color.blue(pixel) * 114) / 1000
+                if (luma >= threshold) light++
+                total++
+                x += stepX
+            }
+            return total > 0 && light * 100 >= total * 99
+        }
+
+        fun columnLight(x: Int): Boolean {
+            var light = 0
+            var total = 0
+            var y = 0
+            while (y < height) {
+                val pixel = bitmap.getPixel(x, y)
+                val luma = (Color.red(pixel) * 299 + Color.green(pixel) * 587 + Color.blue(pixel) * 114) / 1000
+                if (luma >= threshold) light++
+                total++
+                y += stepY
+            }
+            return total > 0 && light * 100 >= total * 99
+        }
+
+        var left = 0
+        while (left < maxX && columnLight(left)) left++
+        var top = 0
+        while (top < maxY && rowLight(top)) top++
+        var right = 0
+        while (right < maxX && columnLight(width - 1 - right)) right++
+        var bottom = 0
+        while (bottom < maxY && rowLight(height - 1 - bottom)) bottom++
+        if (left + right >= width * 0.7f || top + bottom >= height * 0.7f) return bitmap
+        if (left == 0 && top == 0 && right == 0 && bottom == 0) return bitmap
+        return Bitmap.createBitmap(bitmap, left, top, width - left - right, height - top - bottom)
+    }
+
+    fun whitenEdgeDark(bitmap: Bitmap, threshold: Int = 60): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        if (width < 4 || height < 4) return bitmap
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+
+        fun isDark(index: Int): Boolean {
+            val pixel = pixels[index]
+            val luma = (Color.red(pixel) * 299 + Color.green(pixel) * 587 + Color.blue(pixel) * 114) / 1000
+            return luma < threshold
+        }
+
+        val visited = BooleanArray(width * height)
+        val queue = IntArray(width * height)
+        var head = 0
+        var tail = 0
+        fun seed(index: Int) {
+            if (!visited[index] && isDark(index)) {
+                visited[index] = true
+                queue[tail++] = index
+            }
+        }
+        for (x in 0 until width) {
+            seed(x)
+            seed((height - 1) * width + x)
+        }
+        for (y in 0 until height) {
+            seed(y * width)
+            seed(y * width + width - 1)
+        }
+        var changed = false
+        while (head < tail) {
+            val index = queue[head++]
+            pixels[index] = Color.WHITE
+            changed = true
+            val x = index % width
+            val y = index / width
+            if (x > 0) seed(index - 1)
+            if (x + 1 < width) seed(index + 1)
+            if (y > 0) seed(index - width)
+            if (y + 1 < height) seed(index + width)
+        }
+        if (!changed) return bitmap
+        val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        out.setPixels(pixels, 0, width, 0, 0, width, height)
+        return out
+    }
+
     fun trimDarkBorder(bitmap: Bitmap, threshold: Int = 48): Bitmap {
         val width = bitmap.width
         val height = bitmap.height
@@ -268,7 +367,13 @@ object ImageProcessor {
     }
 
     fun cleanCardImage(bitmap: Bitmap): Bitmap =
-        trimToContent(trimDarkBorder(flattenOnWhite(bitmap)))
+        trimToContent(
+            trimDarkBorder(
+                whitenEdgeDark(
+                    trimLightBorder(flattenOnWhite(bitmap))
+                )
+            )
+        )
 
     fun saveJpeg(bitmap: Bitmap, file: File, quality: Int = 94): Boolean {
         return runCatching {
