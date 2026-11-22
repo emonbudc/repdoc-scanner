@@ -713,11 +713,7 @@ private fun HomeBottomBar(
     onSelect: (HomeTab) -> Unit,
     onScan: () -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(84.dp)
-    ) {
+    Box(modifier = Modifier.fillMaxWidth()) {
         Surface(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -729,8 +725,8 @@ private fun HomeBottomBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .height(56.dp)
-                    .padding(horizontal = 4.dp)
+                    .height(68.dp)
+                    .padding(horizontal = 6.dp)
             ) {
                 HomeTab.entries.forEach { tab ->
                     Column(
@@ -738,7 +734,7 @@ private fun HomeBottomBar(
                             .weight(1f)
                             .fillMaxHeight()
                             .clickable { onSelect(tab) }
-                            .padding(top = 6.dp),
+                            .padding(top = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Image(
@@ -746,12 +742,12 @@ private fun HomeBottomBar(
                                 if (tab == selectedTab) tab.selectedIcon else tab.normalIcon
                             ),
                             contentDescription = tab.label,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(24.dp)
                         )
-                        Spacer(Modifier.height(3.dp))
+                        Spacer(Modifier.height(4.dp))
                         Text(
                             text = tab.label,
-                            fontSize = 11.sp,
+                            fontSize = 12.sp,
                             color = if (tab == selectedTab) Brand else Muted,
                             maxLines = 1
                         )
@@ -762,7 +758,7 @@ private fun HomeBottomBar(
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .size(56.dp)
+                .size(62.dp)
                 .clip(CircleShape)
                 .background(Brand)
                 .clickable(onClick = onScan),
@@ -771,7 +767,7 @@ private fun HomeBottomBar(
             Image(
                 painter = painterResource(R.drawable.ic_tab_scan_24px),
                 contentDescription = "Scan",
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(28.dp)
             )
         }
     }
