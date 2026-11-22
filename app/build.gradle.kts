@@ -26,10 +26,11 @@ android {
         applicationId = "com.repdoc.scanner"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.0.1"
 
         buildConfigField("String", "NATIVE_LICENSE_KEY", "\"$nativeLicenseKey\"")
+        buildConfigField("String", "UPDATE_REPO", "\"emonbudc/repdoc-scanner\"")
 
         ndk {
             abiFilters += "arm64-v8a"

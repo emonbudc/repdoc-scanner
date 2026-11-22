@@ -12,6 +12,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,9 +27,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items as rowItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -76,7 +79,15 @@ private val Muted = Color(0xFF9C9C9C)
 private data class GalleryImage(
     val id: Long,
     val uri: Uri,
-    val name: String
+    val name: String,
+    val bucketId: String,
+    val bucketName: String
+)
+
+private data class GalleryAlbum(
+    val id: String,
+    val name: String,
+    val count: Int
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -96,6 +107,13 @@ fun GalleryScreen(
     var loading by remember { mutableStateOf(false) }
     var images by remember { mutableStateOf<List<GalleryImage>>(emptyList()) }
     var selectedIds by remember { mutableStateOf<List<Long>>(emptyList()) }
+    var selectedAlbumId by remember { mutableStateOf<String?>(null) }
+    val albums = remember(images) { buildAlbums(images) }
+    val selectedAlbum = albums.firstOrNull { it.id == selectedAlbumId }
+    val visibleImages = remember(images, selectedAlbumId) {
+        if (selectedAlbumId == null) images
+        else images.filter { it.bucketId == selectedAlbumId }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -121,6 +139,12 @@ fun GalleryScreen(
         loading = false
     }
 
+    LaunchedEffect(albums, selectedAlbumId) {
+        if (selectedAlbumId != null && albums.none { it.id == selectedAlbumId }) {
+            selectedAlbumId = null
+        }
+    }
+
     fun toggle(id: Long) {
         selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
     }
@@ -131,7 +155,8 @@ fun GalleryScreen(
             TopAppBar(
                 title = {
                     Text(
-                        if (selectedIds.isEmpty()) "Gallery" else "${selectedIds.size} selected",
+                        if (selectedIds.isEmpty()) selectedAlbum?.name ?: "Gallery"
+                        else "${selectedIds.size} selected",
                         fontWeight = FontWeight.SemiBold
                     )
                 },
@@ -146,6 +171,17 @@ fun GalleryScreen(
                     navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
+            if (hasPermission && albums.isNotEmpty()) {
+                AlbumStrip(
+                    albums = albums,
+                    totalCount = images.size,
+                    selectedAlbumId = selectedAlbumId,
+                    onSelect = {
+                        selectedAlbumId = it
+                        selectedIds = emptyList()
+                    }
+                )
+            }
         },
         bottomBar = {
             if (hasPermission) {
@@ -178,7 +214,7 @@ fun GalleryScreen(
                         }
                         Button(
                             onClick = {
-                                val uris = images
+                                val uris = visibleImages
                                     .filter { it.id in selectedIds }
                                     .map { it.uri }
                                 if (uris.isNotEmpty()) onImport(uris)
@@ -231,13 +267,33 @@ fun GalleryScreen(
                     Spacer(Modifier.height(12.dp))
                     Text("No images found on this device", color = Muted, fontSize = 13.sp)
                 }
+                visibleImages.isEmpty() -> Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.Outlined.PhotoLibrary,
+                        contentDescription = null,
+                        tint = Muted,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "No images in ${selectedAlbum?.name ?: "this album"}",
+                        color = Muted,
+                        fontSize = 13.sp
+                    )
+                }
                 else -> LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
                     contentPadding = PaddingValues(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    items(images, key = { it.id }) { image ->
+                    items(visibleImages, key = { it.id }) { image ->
                         val selected = image.id in selectedIds
                         Box(
                             modifier = Modifier
@@ -321,6 +377,105 @@ private fun PermissionContent(
     }
 }
 
+@Composable
+private fun AlbumStrip(
+    albums: List<GalleryAlbum>,
+    totalCount: Int,
+    selectedAlbumId: String?,
+    onSelect: (String?) -> Unit
+) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item(key = "all") {
+            AlbumChip(
+                name = "All",
+                count = totalCount,
+                selected = selectedAlbumId == null,
+                onClick = { onSelect(null) }
+            )
+        }
+        rowItems(albums, key = { it.id }) { album ->
+            AlbumChip(
+                name = album.name,
+                count = album.count,
+                selected = album.id == selectedAlbumId,
+                onClick = { onSelect(album.id) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlbumChip(
+    name: String,
+    count: Int,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surface
+            )
+            .border(
+                1.dp,
+                if (selected) Brand else MaterialTheme.colorScheme.outlineVariant,
+                shape
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = name,
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = if (selected) Brand else MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.size(6.dp))
+        Text(
+            text = count.toString(),
+            fontSize = 10.sp,
+            color = if (selected) Brand.copy(alpha = 0.75f)
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun buildAlbums(images: List<GalleryImage>): List<GalleryAlbum> {
+    val albums = LinkedHashMap<String, GalleryAlbum>()
+    for (image in images) {
+        val current = albums[image.bucketId]
+        albums[image.bucketId] = if (current == null) {
+            GalleryAlbum(image.bucketId, image.bucketName, 1)
+        } else {
+            current.copy(count = current.count + 1)
+        }
+    }
+    return albums.values.sortedWith(
+        compareBy<GalleryAlbum> { albumPriority(it.name) }
+            .thenBy { it.name.lowercase() }
+    )
+}
+
+private fun albumPriority(name: String): Int {
+    val value = name.lowercase()
+    return when {
+        value.contains("messenger") -> 0
+        value.contains("facebook") -> 1
+        value.contains("whatsapp") && value.contains("business") -> 3
+        value.contains("whatsapp") -> 2
+        value.contains("camera") || value.contains("dcim") -> 4
+        else -> 5
+    }
+}
+
 private fun hasGalleryPermission(context: Context): Boolean {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         ContextCompat.checkSelfPermission(
@@ -343,7 +498,9 @@ private fun hasGalleryPermission(context: Context): Boolean {
 private fun queryGallery(context: Context): List<GalleryImage> {
     val projection = arrayOf(
         MediaStore.Images.Media._ID,
-        MediaStore.Images.Media.DISPLAY_NAME
+        MediaStore.Images.Media.DISPLAY_NAME,
+        MediaStore.Images.Media.BUCKET_ID,
+        MediaStore.Images.Media.BUCKET_DISPLAY_NAME
     )
     val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
     return runCatching {
@@ -356,10 +513,20 @@ private fun queryGallery(context: Context): List<GalleryImage> {
         )?.use { cursor ->
             val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
             val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+            val bucketIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_ID)
+            val bucketNameColumn =
+                cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
             buildList {
                 while (cursor.moveToNext() && size < 1200) {
                     val id = cursor.getLong(idColumn)
                     val name = cursor.getString(nameColumn) ?: "Image"
+                    val bucketName = cursor.getString(bucketNameColumn)
+                        ?.trim()
+                        .orEmpty()
+                        .ifBlank { "Other" }
+                    val bucketId = cursor.getString(bucketIdColumn)
+                        ?.takeIf { it.isNotBlank() }
+                        ?: bucketName
                     add(
                         GalleryImage(
                             id = id,
@@ -367,7 +534,9 @@ private fun queryGallery(context: Context): List<GalleryImage> {
                                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                                 id
                             ),
-                            name = name
+                            name = name,
+                            bucketId = bucketId,
+                            bucketName = bucketName
                         )
                     )
                 }

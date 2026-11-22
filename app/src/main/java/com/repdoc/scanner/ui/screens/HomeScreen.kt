@@ -54,6 +54,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -68,10 +70,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.repdoc.scanner.BuildConfig
 import com.repdoc.scanner.R
 import com.repdoc.scanner.data.Document
 import com.repdoc.scanner.data.Folder
 import com.repdoc.scanner.data.SearchHit
+import com.repdoc.scanner.util.UpdateChecker
+import com.repdoc.scanner.util.UpdateInfo
+import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -983,6 +989,33 @@ private fun MeContent(
     autoSave: Boolean,
     onAutoSaveChange: (Boolean) -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var updateMessage by remember { mutableStateOf<String?>(null) }
+    var showReleaseFallback by remember { mutableStateOf(false) }
+
+    fun checkForUpdates() {
+        if (checkingUpdate) return
+        checkingUpdate = true
+        scope.launch {
+            val result = UpdateChecker.latest()
+            checkingUpdate = false
+            result.onSuccess { info ->
+                if (UpdateChecker.isNewer(info.versionName, BuildConfig.VERSION_NAME)) {
+                    updateInfo = info
+                } else {
+                    updateMessage = "You're running the latest version of Repdoc Scanner."
+                    showReleaseFallback = false
+                }
+            }.onFailure {
+                updateMessage = "Couldn't check for updates. Open the releases page to download the latest APK."
+                showReleaseFallback = true
+            }
+        }
+    }
+
     Column(
         modifier = modifier
             .verticalScroll(rememberScrollState())
@@ -1022,7 +1055,101 @@ private fun MeContent(
             onCheckedChange = onAutoSaveChange
         )
         MeRow("Storage", "On this device")
-        MeRow("Version", "1.1")
+        MeRow("Version", BuildConfig.VERSION_NAME)
+        MeRow(
+            label = "Check for updates",
+            value = if (checkingUpdate) "Checking…" else "Latest",
+            onClick = { checkForUpdates() }
+        )
+    }
+
+    updateInfo?.let { info ->
+        AlertDialog(
+            onDismissRequest = { updateInfo = null },
+            title = { Text("Update available") },
+            text = {
+                Column {
+                    Text("Version ${info.versionName}")
+                    if (info.notes.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = info.notes,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 8,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (info.apkUrl != null) {
+                            val started = UpdateChecker.downloadUpdate(context, info)
+                            updateInfo = null
+                            updateMessage = if (started) {
+                                "Download started. Open the notification when it finishes."
+                            } else {
+                                "Couldn't start the download. Open the releases page instead."
+                            }
+                            showReleaseFallback = !started
+                        } else {
+                            UpdateChecker.openReleasePage(context)
+                            updateInfo = null
+                        }
+                    }
+                ) {
+                    Text(if (info.apkUrl != null) "Download" else "Open releases")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        UpdateChecker.openReleasePage(context)
+                        updateInfo = null
+                    }
+                ) {
+                    Text("Release page")
+                }
+            }
+        )
+    }
+
+    updateMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = {
+                updateMessage = null
+                showReleaseFallback = false
+            },
+            title = { Text(if (showReleaseFallback) "Update" else "Up to date") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (showReleaseFallback) UpdateChecker.openReleasePage(context)
+                        updateMessage = null
+                        showReleaseFallback = false
+                    }
+                ) {
+                    Text(if (showReleaseFallback) "Open releases" else "OK")
+                }
+            },
+            dismissButton = if (showReleaseFallback) {
+                {
+                    TextButton(
+                        onClick = {
+                            updateMessage = null
+                            showReleaseFallback = false
+                        }
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            } else {
+                null
+            }
+        )
     }
 }
 
@@ -1062,12 +1189,20 @@ private fun MeToggleRow(
 }
 
 @Composable
-private fun MeRow(label: String, value: String) {
+private fun MeRow(
+    label: String,
+    value: String,
+    onClick: (() -> Unit)? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(52.dp)
             .background(MaterialTheme.colorScheme.surface)
+            .then(
+                if (onClick != null) Modifier.clickable(onClick = onClick)
+                else Modifier
+            )
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
