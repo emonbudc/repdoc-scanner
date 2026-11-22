@@ -1,6 +1,7 @@
 package com.repdoc.scanner.ui
 
 import android.graphics.Bitmap
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -20,6 +21,7 @@ import com.repdoc.scanner.ui.screens.CameraScreen
 import com.repdoc.scanner.ui.screens.CropScreen
 import com.repdoc.scanner.ui.screens.DocumentScreen
 import com.repdoc.scanner.ui.screens.FilterScreen
+import com.repdoc.scanner.ui.screens.GalleryScreen
 import com.repdoc.scanner.ui.screens.HomeScreen
 import com.repdoc.scanner.ui.screens.IdCardScreen
 import com.repdoc.scanner.ui.screens.OcrScreen
@@ -43,6 +45,7 @@ sealed interface Screen {
     data object Crop : Screen
     data object Filter : Screen
     data object IdCard : Screen
+    data object Gallery : Screen
     data class PdfTools(val tool: PdfToolType) : Screen
     data class Document(val id: String) : Screen
     data class PageViewer(val documentId: String, val pageId: String) : Screen
@@ -68,6 +71,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             }
             Screen.Filter -> Screen.Crop
             Screen.IdCard -> Screen.Home
+            Screen.Gallery -> currentDocumentScreen(viewModel)
             is Screen.PdfTools -> Screen.Home
             is Screen.Document -> Screen.Home
             is Screen.PageViewer -> Screen.Document(current.documentId)
@@ -137,21 +141,6 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
         }
     }
 
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            scope.launch {
-                val bitmap = withContext(Dispatchers.IO) { ImageProcessor.decodeBitmap(context, uri) }
-                if (bitmap != null) {
-                    importExportType = ImportExportType.IMAGE
-                    viewModel.startImport(listOf(bitmap))
-                    screen = Screen.Crop
-                } else {
-                    Toast.makeText(context, "Could not read image", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
     val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             scope.launch {
@@ -165,13 +154,6 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                 }
             }
         }
-    }
-
-    fun importImage() {
-        importExportType = null
-        viewModel.beginNewPage()
-        viewModel.activeDocumentId = null
-        importLauncher.launch("image/*")
     }
 
     fun importPdf() {
@@ -200,7 +182,12 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                 viewModel.activeDocumentId = null
                 screen = Screen.Camera
             },
-            onImportImage = { importImage() },
+            onImportImage = {
+                importExportType = null
+                viewModel.beginNewPage()
+                viewModel.activeDocumentId = null
+                screen = Screen.Gallery
+            },
             onImportPdf = { importPdf() },
             onIdCard = {
                 viewModel.beginNewPage()
@@ -234,7 +221,11 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                     }
                 }
             },
-            onImport = { importLauncher.launch("image/*") }
+            onImport = {
+                importExportType = null
+                viewModel.beginNewPage()
+                screen = Screen.Gallery
+            }
         )
 
         Screen.Crop -> {
@@ -283,6 +274,24 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             }
         )
 
+        Screen.Gallery -> GalleryScreen(
+            onBack = { screen = currentDocumentScreen(viewModel) },
+            onImport = { uris: List<Uri> ->
+                scope.launch {
+                    val bitmaps = withContext(Dispatchers.IO) {
+                        uris.mapNotNull { uri -> ImageProcessor.decodeBitmap(context, uri, 2400) }
+                    }
+                    if (bitmaps.isEmpty()) {
+                        Toast.makeText(context, "Could not read selected images", Toast.LENGTH_SHORT).show()
+                    } else {
+                        importExportType = ImportExportType.IMAGE
+                        viewModel.startImport(bitmaps)
+                        screen = Screen.Crop
+                    }
+                }
+            }
+        )
+
         is Screen.PdfTools -> PdfToolsScreen(
             tool = current.tool,
             onBack = { screen = Screen.Home }
@@ -298,9 +307,10 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                 screen = Screen.Camera
             },
             onImportPage = {
+                importExportType = null
                 viewModel.beginNewPage()
                 viewModel.activeDocumentId = current.id
-                importLauncher.launch("image/*")
+                screen = Screen.Gallery
             },
             onImportPdf = {
                 viewModel.beginNewPage()
