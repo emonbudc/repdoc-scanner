@@ -116,7 +116,7 @@ fun DocumentScreen(
     var ocrBusy by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
     var exportingImages by remember { mutableStateOf(false) }
-    var selectedPage by remember(document.id) { mutableStateOf<Page?>(null) }
+    var selectedPage by remember(documentId) { mutableStateOf<Page?>(null) }
     var deletePageTarget by remember { mutableStateOf<Page?>(null) }
 
     if (document == null) {
