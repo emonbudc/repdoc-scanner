@@ -75,7 +75,7 @@ fun FilterScreen(
     }
 
     Scaffold(
-        containerColor = Color(0xFF0E1116),
+        containerColor = Color(0xFF111111),
         topBar = {
             TopAppBar(
                 title = { Text("Filter") },
@@ -90,7 +90,7 @@ fun FilterScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF0E1116),
+                    containerColor = Color(0xFF1C1C1E),
                     titleContentColor = Color.White,
                     navigationIconContentColor = Color.White,
                     actionIconContentColor = Color.White
@@ -134,7 +134,7 @@ fun FilterScreen(
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF151A21))
+                    .background(Color(0xFF1C1C1E))
                     .padding(vertical = 10.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -168,10 +168,10 @@ private fun FilterTile(
             modifier = Modifier
                 .size(64.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(if (selected) Color(0xFF1F6FEB) else Color(0xFF242B35))
+                .background(if (selected) Color(0xFF00B796).copy(alpha = 0.16f) else Color(0xFF2C2C2E))
                 .border(
                     width = if (selected) 2.dp else 0.dp,
-                    color = if (selected) Color.White else Color.Transparent,
+                    color = if (selected) Color(0xFF00B796) else Color.Transparent,
                     shape = RoundedCornerShape(10.dp)
                 ),
             contentAlignment = Alignment.Center
@@ -186,7 +186,7 @@ private fun FilterTile(
         Spacer(Modifier.height(5.dp))
         Text(
             text = filter.displayName,
-            color = if (selected) Color.White else Color(0xFFB8C0CC),
+            color = if (selected) Color(0xFF00B796) else Color(0xFF9C9C9C),
             fontSize = 10.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis

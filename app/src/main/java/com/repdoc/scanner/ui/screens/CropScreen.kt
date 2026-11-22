@@ -6,20 +6,20 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -82,38 +82,51 @@ fun CropScreen(
     }
 
     Scaffold(
-        containerColor = Color(0xFF0E1116),
+        containerColor = Color(0xFF111111),
         topBar = {
             TopAppBar(
                 title = { Text("Adjust crop") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Outlined.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Outlined.Close, contentDescription = "Close")
                     }
                 },
                 actions = {
-                    TextButton(
-                        onClick = { autoRequest++ },
-                        enabled = !detecting
-                    ) {
-                        Text("Auto", color = Color.White)
-                    }
-                    IconButton(
-                        onClick = { corners = ImageProcessor.defaultCorners(bitmap) }
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Reset crop")
-                    }
-                    IconButton(onClick = { onDone(AutoCrop.crop(bitmap, corners)) }) {
-                        Icon(Icons.Default.Check, contentDescription = "Apply crop")
+                    TextButton(onClick = { onDone(AutoCrop.crop(bitmap, corners)) }) {
+                        Text("Done", color = Color(0xFF00B796))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF0E1116),
+                    containerColor = Color(0xFF1C1C1E),
                     titleContentColor = Color.White,
                     navigationIconContentColor = Color.White,
                     actionIconContentColor = Color.White
                 )
             )
+        },
+        bottomBar = {
+            Surface(color = Color(0xFF1C1C1E)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(vertical = 6.dp),
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = { autoRequest++ },
+                        enabled = !detecting
+                    ) {
+                        Text("Auto", color = Color(0xFF00B796))
+                    }
+                    TextButton(
+                        onClick = { corners = ImageProcessor.defaultCorners(bitmap) }
+                    ) {
+                        Text("Reset", color = Color.White)
+                    }
+                }
+            }
         }
     ) { padding ->
         Box(
@@ -189,16 +202,16 @@ fun CropScreen(
                     }
                     drawPath(
                         path = path,
-                        color = Color.White.copy(alpha = 0.9f),
+                        color = Color(0xFF00B796),
                         style = Stroke(width = 2.dp.toPx())
                     )
                     drawPath(
                         path = path,
-                        color = Color(0xFF1F6FEB).copy(alpha = 0.12f)
+                        color = Color(0xFF00B796).copy(alpha = 0.12f)
                     )
                     points.forEach { point ->
                         drawCircle(Color.White, radius = 10.dp.toPx(), center = point)
-                        drawCircle(Color(0xFF1F6FEB), radius = 6.dp.toPx(), center = point)
+                        drawCircle(Color(0xFF00B796), radius = 6.dp.toPx(), center = point)
                     }
                 }
             }
@@ -208,7 +221,7 @@ fun CropScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = Color.White)
+                        CircularProgressIndicator(color = Color(0xFF00B796))
                         Spacer(modifier = Modifier.height(12.dp))
                         Text("Detecting edges", color = Color.White)
                     }

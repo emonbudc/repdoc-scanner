@@ -1,6 +1,8 @@
 package com.repdoc.scanner.ui.screens
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,33 +11,37 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,11 +49,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.repdoc.scanner.R
 import com.repdoc.scanner.data.Document
@@ -56,7 +65,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+private val Brand = Color(0xFF00B796)
+
 @Composable
 fun HomeScreen(
     documents: List<Document>,
@@ -66,67 +76,51 @@ fun HomeScreen(
     onDelete: (String) -> Unit,
     onRename: (String, String) -> Unit
 ) {
+    var query by remember { mutableStateOf("") }
     var menuFor by remember { mutableStateOf<String?>(null) }
     var renameDoc by remember { mutableStateOf<Document?>(null) }
     var deleteDoc by remember { mutableStateOf<Document?>(null) }
+    val filtered = remember(documents, query) {
+        if (query.isBlank()) documents
+        else documents.filter { it.name.contains(query, ignoreCase = true) }
+    }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text("Repdoc Scanner") },
-                actions = {
-                    IconButton(onClick = onImport) {
-                        Icon(Icons.Outlined.PhotoLibrary, contentDescription = "Import images")
-                    }
-                }
+            HomeHeader(
+                query = query,
+                onQueryChange = { query = it },
+                onImport = onImport
             )
         },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onScan,
-                icon = { Icon(Icons.Outlined.PhotoCamera, contentDescription = null) },
-                text = { Text("Scan") }
-            )
+        bottomBar = {
+            HomeBottomBar(onScan = onScan, onImport = onImport)
         }
     ) { padding ->
-        if (documents.isEmpty()) {
-            Box(
+        when {
+            documents.isEmpty() -> EmptyHome(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Image(
-                        painter = painterResource(R.drawable.img_home_nodoc),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxWidth(0.72f)
-                    )
-                    Spacer(Modifier.height(20.dp))
-                    Text("No documents yet", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Scan a page or import an image to begin.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        } else {
-            LazyColumn(
+            )
+            filtered.isEmpty() -> Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 8.dp,
-                    bottom = 96.dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                contentAlignment = Alignment.Center
             ) {
-                items(documents, key = { it.id }) { doc ->
+                Text(
+                    "No documents match \"$query\"",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            else -> LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                items(filtered, key = { it.id }) { doc ->
                     DocumentRow(
                         document = doc,
                         menuOpen = menuFor == doc.id,
@@ -141,6 +135,10 @@ fun HomeScreen(
                             menuFor = null
                             deleteDoc = doc
                         }
+                    )
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
+                        thickness = 1.dp
                     )
                 }
             }
@@ -195,6 +193,173 @@ fun HomeScreen(
 }
 
 @Composable
+private fun HomeHeader(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onImport: () -> Unit
+) {
+    Surface(color = MaterialTheme.colorScheme.surface) {
+        Column(modifier = Modifier.statusBarsPadding()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Outlined.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    BasicTextField(
+                        value = query,
+                        onValueChange = onQueryChange,
+                        singleLine = true,
+                        textStyle = TextStyle(
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 14.sp
+                        ),
+                        modifier = Modifier.weight(1f),
+                        decorationBox = { inner ->
+                            if (query.isEmpty()) {
+                                Text(
+                                    "Search documents",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            inner()
+                        }
+                    )
+                }
+                IconButton(onClick = onImport) {
+                    Icon(
+                        Icons.Outlined.PhotoLibrary,
+                        contentDescription = "Import images",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+                thickness = 1.dp
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeBottomBar(onScan: () -> Unit, onImport: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 10.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .height(72.dp)
+                .padding(horizontal = 28.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BottomAction(
+                icon = { Icon(Icons.Outlined.Folder, contentDescription = null) },
+                label = "Docs",
+                selected = true,
+                onClick = {}
+            )
+            Box(
+                modifier = Modifier
+                    .size(58.dp)
+                    .clip(CircleShape)
+                    .background(Brand)
+                    .clickable(onClick = onScan),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Outlined.PhotoCamera,
+                    contentDescription = "Scan",
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+            BottomAction(
+                icon = { Icon(Icons.Outlined.PhotoLibrary, contentDescription = null) },
+                label = "Import",
+                selected = false,
+                onClick = onImport
+            )
+        }
+    }
+}
+
+@Composable
+private fun BottomAction(
+    icon: @Composable () -> Unit,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        CompositionLocalProvider(
+            LocalContentColor provides
+                if (selected) Brand else MaterialTheme.colorScheme.onSurfaceVariant
+        ) {
+            icon()
+        }
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            color = if (selected) Brand else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun EmptyHome(modifier: Modifier) {
+    Box(
+        modifier = modifier.padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Image(
+                painter = painterResource(R.drawable.img_home_nodoc),
+                contentDescription = null,
+                modifier = Modifier.fillMaxWidth(0.72f)
+            )
+            Spacer(Modifier.height(20.dp))
+            Text("No documents yet", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Tap the scan button to capture your first page.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
 private fun DocumentRow(
     document: Document,
     menuOpen: Boolean,
@@ -204,69 +369,84 @@ private fun DocumentRow(
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(
-        onClick = onOpen,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(100.dp)
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onOpen)
+            .padding(start = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .size(width = 99.dp, height = 78.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(76.dp, 96.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                val firstPage = document.pages.firstOrNull()
-                if (firstPage != null) {
-                    AsyncImage(
-                        model = File(firstPage.imagePath),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Image(
-                        painter = painterResource(R.drawable.ic_imgpage_ocr_small),
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp)
-                    )
-                }
+            val firstPage = document.pages.firstOrNull()
+            if (firstPage != null) {
+                AsyncImage(
+                    model = File(firstPage.imagePath),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Image(
+                    painter = painterResource(R.drawable.ic_imgpage_ocr_small),
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp)
+                )
             }
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = document.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(5.dp))
-                Text(
-                    text = "${document.pageCount} ${if (document.pageCount == 1) "page" else "pages"}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(2.dp))
+        }
+        Spacer(Modifier.width(17.dp))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(vertical = 12.dp)
+        ) {
+            Text(
+                text = document.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = formatDate(document.updatedAt),
-                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        text = document.pageCount.toString(),
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
-            Box {
-                IconButton(onClick = onMenu) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "More")
-                }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = onDismissMenu) {
-                    DropdownMenuItem(text = { Text("Rename") }, onClick = onRename)
-                    DropdownMenuItem(text = { Text("Delete") }, onClick = onDelete)
-                }
+        }
+        Box {
+            IconButton(onClick = onMenu) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "More",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = onDismissMenu) {
+                DropdownMenuItem(text = { Text("Rename") }, onClick = onRename)
+                DropdownMenuItem(text = { Text("Delete") }, onClick = onDelete)
             }
         }
     }

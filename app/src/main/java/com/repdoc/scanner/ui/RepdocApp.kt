@@ -1,9 +1,5 @@
 package com.repdoc.scanner.ui
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.net.Uri
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,21 +9,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.repdoc.scanner.AppViewModel
+import com.repdoc.scanner.ui.screens.CameraScreen
 import com.repdoc.scanner.ui.screens.CropScreen
 import com.repdoc.scanner.ui.screens.DocumentScreen
 import com.repdoc.scanner.ui.screens.FilterScreen
 import com.repdoc.scanner.ui.screens.HomeScreen
 import com.repdoc.scanner.ui.screens.OcrScreen
 import com.repdoc.scanner.util.ImageProcessor
-import java.io.File
 
 sealed interface Screen {
     data object Home : Screen
+    data object Camera : Screen
     data object Crop : Screen
     data object Filter : Screen
     data class Document(val id: String) : Screen
@@ -39,11 +34,11 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
     val context = LocalContext.current
     val documents by viewModel.documents.collectAsStateWithLifecycle()
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
-    var cameraUri by remember { mutableStateOf<Uri?>(null) }
 
     fun goBack() {
         screen = when (val current = screen) {
             Screen.Home -> Screen.Home
+            Screen.Camera -> currentDocumentScreen(viewModel)
             Screen.Crop -> {
                 viewModel.resetPending()
                 currentDocumentScreen(viewModel)
@@ -51,17 +46,6 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             Screen.Filter -> Screen.Crop
             is Screen.Document -> Screen.Home
             is Screen.Ocr -> Screen.Document(current.documentId)
-        }
-    }
-
-    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        val uri = cameraUri
-        if (success && uri != null) {
-            val bitmap = ImageProcessor.decodeBitmap(context, uri)
-            if (bitmap != null) {
-                viewModel.pendingBitmap = bitmap
-                screen = Screen.Crop
-            }
         }
     }
 
@@ -75,37 +59,6 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
         }
     }
 
-    fun launchCamera() {
-        try {
-            val dir = File(context.cacheDir, "captures").apply { mkdirs() }
-            val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-            cameraUri = uri
-            cameraLauncher.launch(uri)
-        } catch (error: Exception) {
-            Toast.makeText(context, "Camera unavailable: ${error.message}", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            launchCamera()
-        } else {
-            Toast.makeText(context, "Camera permission is required", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    fun openCamera() {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            launchCamera()
-        } else {
-            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-        }
-    }
 
     BackHandler(enabled = screen != Screen.Home) { goBack() }
 
@@ -118,7 +71,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             },
             onScan = {
                 viewModel.activeDocumentId = null
-                openCamera()
+                screen = Screen.Camera
             },
             onImport = {
                 viewModel.activeDocumentId = null
@@ -126,6 +79,18 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             },
             onDelete = viewModel::delete,
             onRename = viewModel::rename
+        )
+
+        Screen.Camera -> CameraScreen(
+            onClose = { goBack() },
+            onCaptured = { path ->
+                val bitmap = ImageProcessor.decodeFile(path)
+                if (bitmap != null) {
+                    viewModel.pendingBitmap = bitmap
+                    screen = Screen.Crop
+                }
+            },
+            onImport = { importLauncher.launch("image/*") }
         )
 
         Screen.Crop -> {
@@ -172,7 +137,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             onBack = { screen = Screen.Home },
             onAddPage = {
                 viewModel.activeDocumentId = current.id
-                openCamera()
+                screen = Screen.Camera
             },
             onImportPage = {
                 viewModel.activeDocumentId = current.id
