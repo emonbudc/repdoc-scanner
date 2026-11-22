@@ -100,7 +100,7 @@ class DocumentRepository(context: Context) {
     }
 
     @Synchronized
-    fun addPage(documentId: String, bitmap: Bitmap): Document? {
+    fun addPage(documentId: String, bitmap: Bitmap, original: Bitmap = bitmap): Document? {
         val dir = File(root, documentId)
         val current = readDocument(dir) ?: return null
         val pageId = UUID.randomUUID().toString()
@@ -108,7 +108,11 @@ class DocumentRepository(context: Context) {
         FileOutputStream(imageFile).use { out ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
         }
-        val page = Page(pageId, imageFile.absolutePath)
+        val originalFile = File(dir, "page_${pageId}_original.jpg")
+        FileOutputStream(originalFile).use { out ->
+            original.compress(Bitmap.CompressFormat.JPEG, 92, out)
+        }
+        val page = Page(pageId, imageFile.absolutePath, originalImagePath = originalFile.absolutePath)
         val updated = current.copy(
             pages = current.pages + page,
             updatedAt = System.currentTimeMillis()
@@ -119,7 +123,13 @@ class DocumentRepository(context: Context) {
     }
 
     @Synchronized
-    fun replacePageImage(documentId: String, pageId: String, bitmap: Bitmap): Document? {
+    fun replacePageImage(
+        documentId: String,
+        pageId: String,
+        bitmap: Bitmap,
+        original: Bitmap? = null,
+        updateOriginal: Boolean = true
+    ): Document? {
         val dir = File(root, documentId)
         val current = readDocument(dir) ?: return null
         val oldPage = current.pages.firstOrNull { it.id == pageId } ?: return null
@@ -127,9 +137,30 @@ class DocumentRepository(context: Context) {
         FileOutputStream(imageFile).use { out ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
         }
+        var originalPath = oldPage.originalImagePath?.takeIf { File(it).isFile }
+        if (updateOriginal) {
+            val source = original ?: bitmap
+            val originalFile = File(dir, "page_${pageId}_original_${System.currentTimeMillis()}.jpg")
+            FileOutputStream(originalFile).use { out ->
+                source.compress(Bitmap.CompressFormat.JPEG, 92, out)
+            }
+            if (originalPath != null && originalPath != originalFile.absolutePath) {
+                runCatching { File(originalPath).delete() }
+            }
+            originalPath = originalFile.absolutePath
+        } else if (originalPath == null) {
+            val originalFile = File(dir, "page_${pageId}_original_${System.currentTimeMillis()}.jpg")
+            if (runCatching { File(oldPage.imagePath).copyTo(originalFile, overwrite = true) }.isSuccess) {
+                originalPath = originalFile.absolutePath
+            }
+        }
         val updated = current.copy(
             pages = current.pages.map { page ->
-                if (page.id == pageId) page.copy(imagePath = imageFile.absolutePath) else page
+                if (page.id == pageId) {
+                    page.copy(imagePath = imageFile.absolutePath, originalImagePath = originalPath)
+                } else {
+                    page
+                }
             },
             updatedAt = System.currentTimeMillis()
         )
@@ -152,6 +183,7 @@ class DocumentRepository(context: Context) {
         )
         writeDocument(dir, updated)
         runCatching { File(page.imagePath).delete() }
+        page.originalImagePath?.let { runCatching { File(it).delete() } }
         reload()
         return updated
     }
@@ -181,7 +213,15 @@ class DocumentRepository(context: Context) {
         val newId = UUID.randomUUID().toString()
         val newFile = File(dir, "page_$newId.jpg")
         if (!runCatching { File(source.imagePath).copyTo(newFile, overwrite = true) }.isSuccess) return null
-        val copy = source.copy(id = newId, imagePath = newFile.absolutePath)
+        val newOriginal = File(dir, "page_${newId}_original.jpg")
+        source.originalImagePath?.let { path ->
+            runCatching { File(path).copyTo(newOriginal, overwrite = true) }
+        }
+        val copy = source.copy(
+            id = newId,
+            imagePath = newFile.absolutePath,
+            originalImagePath = newOriginal.takeIf { it.isFile }?.absolutePath
+        )
         val pages = current.pages.toMutableList().apply { add(index + 1, copy) }
         val updated = current.copy(pages = pages, updatedAt = System.currentTimeMillis())
         writeDocument(dir, updated)
@@ -301,7 +341,10 @@ class DocumentRepository(context: Context) {
                             Page(
                                 id = p.getString("id"),
                                 imagePath = File(dir, image).absolutePath,
-                                ocrText = p.optString("ocr").takeIf { it.isNotBlank() }
+                                ocrText = p.optString("ocr").takeIf { it.isNotBlank() },
+                                originalImagePath = p.optString("original")
+                                    .takeIf { it.isNotBlank() }
+                                    ?.let { File(dir, it).absolutePath }
                             )
                         )
                     }
@@ -326,6 +369,7 @@ class DocumentRepository(context: Context) {
                     .put("id", page.id)
                     .put("image", File(page.imagePath).name)
                     .put("ocr", page.ocrText ?: "")
+                    .put("original", page.originalImagePath?.let { File(it).name } ?: "")
             )
         }
         val json = JSONObject()

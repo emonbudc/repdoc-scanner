@@ -312,8 +312,9 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                 scope.launch {
                     val page = viewModel.document(current.id)?.pages?.firstOrNull { it.id == pageId }
                         ?: return@launch
+                    val path = page.originalImagePath ?: page.imagePath
                     val bitmap = withContext(Dispatchers.IO) {
-                        ImageProcessor.decodeFile(page.imagePath)
+                        ImageProcessor.decodeFile(path)
                     }
                     if (bitmap != null) {
                         viewModel.startEditingPage(current.id, pageId, bitmap)

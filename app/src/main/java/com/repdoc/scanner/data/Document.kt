@@ -3,7 +3,8 @@ package com.repdoc.scanner.data
 data class Page(
     val id: String,
     val imagePath: String,
-    val ocrText: String? = null
+    val ocrText: String? = null,
+    val originalImagePath: String? = null
 )
 
 data class Folder(

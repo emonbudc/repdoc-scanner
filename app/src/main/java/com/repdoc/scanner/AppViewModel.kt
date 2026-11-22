@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -71,10 +72,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val editDocumentId = editingDocumentId
             val editPageId = editingPageId
             val updated = if (editDocumentId != null && editPageId != null) {
-                repository.replacePageImage(editDocumentId, editPageId, filtered)
+                repository.replacePageImage(editDocumentId, editPageId, filtered, original = bitmap)
             } else {
                 val id = activeDocumentId ?: createDocument().id
-                repository.addPage(id, filtered)
+                repository.addPage(id, filtered, original = bitmap)
             }
             editingDocumentId = null
             editingPageId = null
@@ -161,14 +162,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             busy = true
             val page = repository.document(documentId)?.pages?.firstOrNull { it.id == pageId }
             if (page != null) {
+                val basePath = page.originalImagePath?.takeIf { File(it).isFile } ?: page.imagePath
                 val bitmap = withContext(Dispatchers.IO) {
-                    ImageProcessor.decodeFile(page.imagePath)
+                    ImageProcessor.decodeFile(basePath)
                 }
                 if (bitmap != null) {
                     val filtered = withContext(Dispatchers.Default) {
                         NativeFilters.apply(bitmap, filter)
                     }
-                    repository.replacePageImage(documentId, pageId, filtered)
+                    repository.replacePageImage(
+                        documentId,
+                        pageId,
+                        filtered,
+                        updateOriginal = false
+                    )
                 }
             }
             busy = false

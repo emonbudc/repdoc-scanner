@@ -203,8 +203,10 @@ fun PageViewerScreen(
                                 filter = filter,
                                 selected = appliedFilter == filter,
                                 onClick = {
-                                    appliedFilter = filter
-                                    viewModel.applyFilterToPage(document.id, page.id, filter)
+                                    if (!viewModel.busy) {
+                                        appliedFilter = filter
+                                        viewModel.applyFilterToPage(document.id, page.id, filter)
+                                    }
                                 }
                             )
                         }
