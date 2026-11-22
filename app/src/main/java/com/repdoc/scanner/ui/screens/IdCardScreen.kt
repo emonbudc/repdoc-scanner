@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -60,13 +63,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.repdoc.scanner.util.AutoCrop
+import com.repdoc.scanner.util.DocumentFilter
 import com.repdoc.scanner.util.ImageProcessor
+import com.repdoc.scanner.util.NativeFilters
 import com.repdoc.scanner.util.PdfImporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.max
+import kotlin.math.min
 
 private val Brand = Color(0xFF00B796)
 private val Muted = Color(0xFF9C9C9C)
@@ -89,6 +95,7 @@ fun IdCardScreen(
     var gallerySide by remember { mutableStateOf(IdSide.FRONT) }
     var cropSource by remember { mutableStateOf<Bitmap?>(null) }
     var cropSide by remember { mutableStateOf<IdSide?>(null) }
+    var selectedFilter by remember { mutableStateOf(DocumentFilter.MAGIC_COLOR) }
 
     fun setSide(side: IdSide, bitmap: Bitmap) {
         if (side == IdSide.FRONT) front = bitmap else back = bitmap
@@ -253,6 +260,24 @@ fun IdCardScreen(
                         galleryLauncher.launch("image/*")
                     }
                 )
+                Text(
+                    "Filter both sides",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(DocumentFilter.entries, key = { it.name }) { filter ->
+                        IdFilterTile(
+                            filter = filter,
+                            selected = selectedFilter == filter,
+                            onClick = { selectedFilter = filter }
+                        )
+                    }
+                }
                 Spacer(Modifier.height(4.dp))
                 Button(
                     onClick = {
@@ -262,7 +287,9 @@ fun IdCardScreen(
                             busy = true
                             scope.launch {
                                 val combined = withContext(Dispatchers.Default) {
-                                    combineIdCard(f, b)
+                                    val filteredFront = NativeFilters.apply(f, selectedFilter)
+                                    val filteredBack = NativeFilters.apply(b, selectedFilter)
+                                    combineIdCard(filteredFront, filteredBack)
                                 }
                                 busy = false
                                 onCreate(combined)
@@ -278,7 +305,7 @@ fun IdCardScreen(
                     Text("Create ID card", fontSize = 15.sp)
                 }
                 Text(
-                    "The two sides are placed on one page. You can choose a filter next.",
+                    "Both sides are placed on one white A4 page, front then back.",
                     fontSize = 11.sp,
                     color = Muted
                 )
@@ -294,6 +321,36 @@ fun IdCardScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun IdFilterTile(
+    filter: DocumentFilter,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) Brand.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick)
+            .padding(6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Image(
+            painter = androidx.compose.ui.res.painterResource(filter.iconRes),
+            contentDescription = filter.displayName,
+            modifier = Modifier.size(44.dp),
+            contentScale = ContentScale.Crop
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(
+            text = filter.displayName,
+            fontSize = 8.sp,
+            color = if (selected) Brand else Muted,
+            maxLines = 1
+        )
     }
 }
 
@@ -381,33 +438,36 @@ private suspend fun prepareBitmap(context: Context, bitmap: Bitmap): Bitmap =
     }
 
 private fun combineIdCard(front: Bitmap, back: Bitmap): Bitmap {
-    val width = max(front.width, back.width)
-    val margin = (width * 0.04f).toInt().coerceAtLeast(24)
-    val gap = margin
-    val frontScaled = scaleToWidth(front, width)
-    val backScaled = scaleToWidth(back, width)
-    val output = Bitmap.createBitmap(
-        width + margin * 2,
-        frontScaled.height + gap + backScaled.height + margin * 2,
-        Bitmap.Config.ARGB_8888
-    )
+    val pageWidth = 2480
+    val pageHeight = 3508
+    val margin = 140
+    val gap = 120
+    val cellWidth = pageWidth - margin * 2
+    val cellHeight = (pageHeight - margin * 2 - gap) / 2
+    val frontScaled = fitToCell(front, cellWidth, cellHeight)
+    val backScaled = fitToCell(back, cellWidth, cellHeight)
+    val output = Bitmap.createBitmap(pageWidth, pageHeight, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(output)
     canvas.drawColor(AndroidColor.WHITE)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    canvas.drawBitmap(frontScaled, margin.toFloat(), margin.toFloat(), paint)
-    canvas.drawBitmap(
-        backScaled,
-        margin.toFloat(),
-        (margin + frontScaled.height + gap).toFloat(),
-        paint
-    )
+    val frontLeft = (pageWidth - frontScaled.width) / 2f
+    val frontTop = margin + (cellHeight - frontScaled.height) / 2f
+    val backLeft = (pageWidth - backScaled.width) / 2f
+    val backTop = margin + cellHeight + gap + (cellHeight - backScaled.height) / 2f
+    canvas.drawBitmap(frontScaled, frontLeft, frontTop, paint)
+    canvas.drawBitmap(backScaled, backLeft, backTop, paint)
     if (frontScaled !== front) frontScaled.recycle()
     if (backScaled !== back) backScaled.recycle()
     return output
 }
 
-private fun scaleToWidth(bitmap: Bitmap, width: Int): Bitmap {
-    if (bitmap.width == width) return bitmap
-    val height = (bitmap.height.toFloat() * width / bitmap.width).toInt().coerceAtLeast(1)
+private fun fitToCell(bitmap: Bitmap, maxWidth: Int, maxHeight: Int): Bitmap {
+    val scale = min(
+        maxWidth.toFloat() / bitmap.width,
+        maxHeight.toFloat() / bitmap.height
+    )
+    val width = (bitmap.width * scale).toInt().coerceAtLeast(1)
+    val height = (bitmap.height * scale).toInt().coerceAtLeast(1)
+    if (width == bitmap.width && height == bitmap.height) return bitmap
     return Bitmap.createScaledBitmap(bitmap, width, height, true)
 }

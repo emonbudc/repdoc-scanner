@@ -217,12 +217,8 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             onBack = { screen = Screen.Home },
             onCreate = { combined ->
                 viewModel.pendingBitmap = combined
-                viewModel.selectedFilter = com.repdoc.scanner.util.DocumentFilter.MAGIC_COLOR
-                if (viewModel.autoSave) {
-                    saveCurrent(combined)
-                } else {
-                    screen = Screen.Filter
-                }
+                viewModel.selectedFilter = com.repdoc.scanner.util.DocumentFilter.ORIGINAL
+                saveCurrent(combined)
             }
         )
 
