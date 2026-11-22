@@ -192,7 +192,7 @@ fun DocumentScreen(
                 val bitmap = withContext(Dispatchers.IO) {
                     ImageProcessor.decodeFile(page.imagePath, 2200)
                 } ?: continue
-                val text = runCatching { OcrEngine.recognize(bitmap) }.getOrDefault("")
+                val text = runCatching { OcrEngine.recognize(context, bitmap) }.getOrDefault("")
                 if (text.isNotBlank()) {
                     viewModel.updateOcr(document.id, page.id, text)
                 }

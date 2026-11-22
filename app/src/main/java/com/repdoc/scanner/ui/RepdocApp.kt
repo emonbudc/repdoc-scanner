@@ -22,6 +22,7 @@ import com.repdoc.scanner.ui.screens.FilterScreen
 import com.repdoc.scanner.ui.screens.HomeScreen
 import com.repdoc.scanner.ui.screens.IdCardScreen
 import com.repdoc.scanner.ui.screens.OcrScreen
+import com.repdoc.scanner.ui.screens.PageViewerScreen
 import com.repdoc.scanner.ui.screens.PdfToolType
 import com.repdoc.scanner.ui.screens.PdfToolsScreen
 import com.repdoc.scanner.util.ImageProcessor
@@ -38,7 +39,8 @@ sealed interface Screen {
     data object IdCard : Screen
     data class PdfTools(val tool: PdfToolType) : Screen
     data class Document(val id: String) : Screen
-    data class Ocr(val documentId: String, val pageId: String) : Screen
+    data class PageViewer(val documentId: String, val pageId: String) : Screen
+    data class Ocr(val documentId: String, val pageId: String, val autoRun: Boolean = false) : Screen
 }
 
 @Composable
@@ -61,6 +63,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             Screen.IdCard -> Screen.Home
             is Screen.PdfTools -> Screen.Home
             is Screen.Document -> Screen.Home
+            is Screen.PageViewer -> Screen.Document(current.documentId)
             is Screen.Ocr -> Screen.Document(current.documentId)
         }
     }
@@ -129,7 +132,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             },
             onOpenPage = { documentId, pageId ->
                 viewModel.activeDocumentId = documentId
-                screen = Screen.Ocr(documentId, pageId)
+                screen = Screen.Ocr(documentId, pageId, autoRun = true)
             },
             onScan = {
                 viewModel.beginNewPage()
@@ -247,7 +250,7 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
                 viewModel.activeDocumentId = current.id
                 pdfLauncher.launch(arrayOf("application/pdf"))
             },
-            onOpenPage = { pageId -> screen = Screen.Ocr(current.id, pageId) },
+            onOpenPage = { pageId -> screen = Screen.PageViewer(current.id, pageId) },
             onEditPage = { pageId ->
                 scope.launch {
                     val page = viewModel.document(current.id)?.pages?.firstOrNull { it.id == pageId }
@@ -264,11 +267,22 @@ fun RepdocApp(viewModel: AppViewModel = viewModel()) {
             onDeleted = { screen = Screen.Home }
         )
 
+        is Screen.PageViewer -> PageViewerScreen(
+            documentId = current.documentId,
+            pageId = current.pageId,
+            viewModel = viewModel,
+            onBack = { screen = Screen.Document(current.documentId) },
+            onOpenText = {
+                screen = Screen.Ocr(current.documentId, current.pageId, autoRun = true)
+            }
+        )
+
         is Screen.Ocr -> OcrScreen(
             documentId = current.documentId,
             pageId = current.pageId,
             viewModel = viewModel,
             onBack = { screen = Screen.Document(current.documentId) },
+            autoRun = current.autoRun,
             onEdit = { bitmap ->
                 viewModel.startEditingPage(current.documentId, current.pageId, bitmap)
                 screen = Screen.Crop

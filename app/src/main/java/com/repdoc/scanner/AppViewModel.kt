@@ -156,6 +156,33 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         repository.duplicatePage(documentId, pageId)
     }
 
+    fun applyFilterToPage(documentId: String, pageId: String, filter: DocumentFilter) {
+        viewModelScope.launch {
+            busy = true
+            val page = repository.document(documentId)?.pages?.firstOrNull { it.id == pageId }
+            if (page != null) {
+                val bitmap = withContext(Dispatchers.IO) {
+                    ImageProcessor.decodeFile(page.imagePath)
+                }
+                if (bitmap != null) {
+                    val filtered = withContext(Dispatchers.Default) {
+                        NativeFilters.apply(bitmap, filter)
+                    }
+                    repository.replacePageImage(documentId, pageId, filtered)
+                }
+            }
+            busy = false
+        }
+    }
+
+    fun replacePageImage(documentId: String, pageId: String, bitmap: Bitmap) {
+        viewModelScope.launch {
+            busy = true
+            repository.replacePageImage(documentId, pageId, bitmap)
+            busy = false
+        }
+    }
+
     fun rotatePage(documentId: String, pageId: String, degrees: Int = 90) {
         viewModelScope.launch {
             busy = true
